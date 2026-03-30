@@ -48,6 +48,18 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 - `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
 - `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
 
+## Discord Bot
+
+The `artifacts/discord-bot` package runs a Discord bot that:
+- Watches `TICKET_SOURCE_CHANNEL_ID` for messages from Ticket Tool bot
+- Parses embed fields (Q&A from the user's ticket submission)
+- Creates a forum thread in `FORUM_CHANNEL_ID` with all the ticket details
+- Attaches an "Accept Commission" button — when clicked, it disables itself, posts an accepted notice, and renames the thread with `[ACCEPTED]` prefix
+
+Run with: `pnpm --filter @workspace/discord-bot run dev`
+
+Required secrets: `DISCORD_BOT_TOKEN`, `FORUM_CHANNEL_ID`, `TICKET_SOURCE_CHANNEL_ID`
+
 ## Packages
 
 ### `artifacts/api-server` (`@workspace/api-server`)
