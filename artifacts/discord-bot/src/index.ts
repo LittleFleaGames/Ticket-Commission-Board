@@ -10,6 +10,7 @@ import {
   ForumChannel,
   ButtonInteraction,
   ThreadChannel,
+  TextChannel,
   Partials,
   REST,
   Routes,
@@ -19,11 +20,14 @@ import {
   TextInputStyle,
   ModalSubmitInteraction,
   ChatInputCommandInteraction,
+  PermissionFlagsBits,
+  Guild,
 } from "discord.js";
 
 const DISCORD_BOT_TOKEN = process.env["DISCORD_BOT_TOKEN"];
 const FORUM_CHANNEL_ID = process.env["FORUM_CHANNEL_ID"];
 const POST_A_QUEST_CHANNEL_ID = "1486847104457638009";
+const COMMISSION_CATEGORY_ID = "1486848687706738889";
 
 if (!DISCORD_BOT_TOKEN) throw new Error("DISCORD_BOT_TOKEN is required");
 if (!FORUM_CHANNEL_ID) throw new Error("FORUM_CHANNEL_ID is required");
@@ -38,7 +42,7 @@ const client = new Client({
 // ---------------------------------------------------------------------------
 const commissionCommand = new SlashCommandBuilder()
   .setName("commission")
-  .setDescription("Submit a commission request — a forum thread will be created for you");
+  .setDescription("Post a quest request — a forum thread will be created for you");
 
 // ---------------------------------------------------------------------------
 // Register slash commands for all guilds the bot is in
@@ -62,43 +66,132 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log(`✅ Bot ready! Logged in as ${readyClient.user.tag}`);
   console.log(`🗂️  Forum channel: ${FORUM_CHANNEL_ID}`);
 
-  // Register commands for every guild the bot is already in
   for (const guild of readyClient.guilds.cache.values()) {
     await registerCommands(guild.id);
   }
 });
 
-// Also register when joining a new guild
 client.on(Events.GuildCreate, async (guild) => {
   console.log(`📥 Joined new guild: ${guild.name}`);
   await registerCommands(guild.id);
 });
 
 // ---------------------------------------------------------------------------
-// Handle /commission command → open modal
+// Create a private text channel between requester, acceptor, and admins
+// ---------------------------------------------------------------------------
+async function createPrivateCommissionChannel(
+  guild: Guild,
+  requesterId: string,
+  acceptorId: string,
+  questType: string,
+  threadId: string
+): Promise<TextChannel | null> {
+  try {
+    const botId = client.user!.id;
+
+    // Gather admin role IDs (roles with Administrator permission)
+    const adminRoles = guild.roles.cache.filter((role) =>
+      role.permissions.has(PermissionFlagsBits.Administrator)
+    );
+
+    const channel = await guild.channels.create({
+      name: `quest-${requesterId}-${acceptorId}`.slice(0, 100),
+      type: ChannelType.GuildText,
+      parent: COMMISSION_CATEGORY_ID,
+      permissionOverwrites: [
+        // Deny everyone by default
+        {
+          id: guild.roles.everyone.id,
+          deny: [PermissionFlagsBits.ViewChannel],
+        },
+        // Allow the bot itself
+        {
+          id: botId,
+          allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.ManageChannels,
+          ],
+        },
+        // Allow the requester
+        {
+          id: requesterId,
+          allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.ReadMessageHistory,
+          ],
+        },
+        // Allow the acceptor
+        {
+          id: acceptorId,
+          allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.ReadMessageHistory,
+          ],
+        },
+        // Allow all admin roles
+        ...adminRoles.map((role) => ({
+          id: role.id,
+          allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.ReadMessageHistory,
+            PermissionFlagsBits.ManageChannels,
+          ],
+        })),
+      ],
+    });
+
+    // Welcome message in the private channel
+    const welcomeEmbed = new EmbedBuilder()
+      .setColor(0x57f287)
+      .setTitle("⚔️ Quest Accepted — Private Channel")
+      .setDescription(
+        `Welcome! This is your private channel for this quest.\n\n` +
+        `**Requester:** <@${requesterId}>\n` +
+        `**Acceptor:** <@${acceptorId}>\n\n` +
+        `You can discuss the details of the quest here. The original quest thread: <#${threadId}>`
+      )
+      .setTimestamp();
+
+    await channel.send({ embeds: [welcomeEmbed] });
+
+    console.log(`✅ Created private channel: ${channel.name} (${channel.id})`);
+    return channel;
+  } catch (err) {
+    console.error("❌ Failed to create private channel:", err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Handle interactions
 // ---------------------------------------------------------------------------
 client.on(Events.InteractionCreate, async (interaction) => {
-  // --- Slash command ---
+
+  // --- /commission slash command → show modal ---
   if (interaction.isChatInputCommand() && interaction.commandName === "commission") {
     const cmd = interaction as ChatInputCommandInteraction;
 
     if (cmd.channelId !== POST_A_QUEST_CHANNEL_ID) {
       await cmd.reply({
         content: `❌ This command can only be used in <#${POST_A_QUEST_CHANNEL_ID}>.`,
-        ephemeral: true,
+        flags: 1 << 6, // ephemeral
       });
       return;
     }
 
     const modal = new ModalBuilder()
       .setCustomId("commission_modal")
-      .setTitle("Commission Request");
+      .setTitle("Quest Request");
 
     const typeInput = new TextInputBuilder()
       .setCustomId("commission_type")
-      .setLabel("What type of commission are you requesting?")
+      .setLabel("What type of quest do you want to post?")
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder("e.g. Art, Writing, Music, Video editing...")
+      .setPlaceholder("e.g. Blacksmithing, Gathering, Leatherworking, Mercenary...")
       .setRequired(true)
       .setMaxLength(100);
 
@@ -106,7 +199,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setCustomId("description")
       .setLabel("Describe what you want in detail")
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder("Describe your commission in as much detail as possible...")
+      .setPlaceholder("Describe your quest in as much detail as possible...")
       .setRequired(true)
       .setMaxLength(1000);
 
@@ -114,7 +207,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setCustomId("budget")
       .setLabel("What is your budget?")
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder("e.g. $20–$50, open to offers, etc.")
+      .setPlaceholder("e.g. 100 gold, 1000 gold, other item, etc.")
       .setRequired(true)
       .setMaxLength(100);
 
@@ -146,10 +239,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // --- Modal submission ---
+  // --- Modal submission → create forum thread ---
   if (interaction.isModalSubmit() && interaction.customId === "commission_modal") {
     const modal = interaction as ModalSubmitInteraction;
-    await modal.deferReply({ ephemeral: true });
+    await modal.deferReply({ flags: 1 << 6 }); // ephemeral
 
     const commissionType = modal.fields.getTextInputValue("commission_type");
     const description = modal.fields.getTextInputValue("description");
@@ -169,36 +262,34 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const forum = forumChannel as ForumChannel;
       const threadTitle = `[${commissionType}] — ${modal.user.username}`.slice(0, 100);
 
-      // Build the embed
       const embed = new EmbedBuilder()
         .setColor(0x5865f2)
-        .setTitle("📋 Commission Request")
+        .setTitle("📋 Quest Request")
         .setAuthor({
           name: modal.user.username,
           iconURL: modal.user.displayAvatarURL(),
         })
         .addFields(
-          { name: "🎨 Type", value: commissionType, inline: true },
+          { name: "⚔️ Quest Type", value: commissionType, inline: true },
           { name: "💰 Budget", value: budget, inline: true },
           { name: "⏰ Deadline", value: deadline, inline: true },
           { name: "📝 Description", value: description, inline: false },
         )
         .setTimestamp()
-        .setFooter({ text: "Click Accept below to take this commission" });
+        .setFooter({ text: "Click Accept below to take this quest" });
 
       if (extras) {
         embed.addFields({ name: "📎 References / Extra Info", value: extras, inline: false });
       }
 
-      // Accept button
+      // Store requesterId in the button customId so we can use it on accept
       const acceptButton = new ButtonBuilder()
         .setCustomId(`accept_commission_${modal.user.id}`)
-        .setLabel("✅ Accept Commission")
+        .setLabel("✅ Accept Quest")
         .setStyle(ButtonStyle.Success);
 
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(acceptButton);
 
-      // Create the forum thread
       const thread = await forum.threads.create({
         name: threadTitle,
         message: {
@@ -207,28 +298,42 @@ client.on(Events.InteractionCreate, async (interaction) => {
         },
       });
 
-      console.log(
-        `✅ Created forum thread: "${threadTitle}" (${thread.id}) by ${modal.user.tag}`
-      );
+      console.log(`✅ Created forum thread: "${threadTitle}" (${thread.id}) by ${modal.user.tag}`);
 
       await modal.editReply({
-        content: `✅ Your commission request has been posted! Check it out here: <#${thread.id}>`,
+        content: `✅ Your quest has been posted! Check it out here: <#${thread.id}>`,
       });
     } catch (err) {
       console.error("❌ Failed to create forum thread:", err);
       await modal.editReply({
-        content: "❌ Something went wrong while creating your forum thread. Please try again.",
+        content: "❌ Something went wrong while creating your quest thread. Please try again.",
       });
     }
     return;
   }
 
-  // --- Accept Commission button ---
+  // --- Accept Quest button ---
   if (interaction.isButton() && interaction.customId.startsWith("accept_commission_")) {
     const btn = interaction as ButtonInteraction;
     const thread = interaction.channel as ThreadChannel;
+    const guild = interaction.guild;
 
-    // Disable the button
+    if (!guild) return;
+
+    // Extract the original requester ID from the button customId
+    const requesterId = btn.customId.replace("accept_commission_", "");
+    const acceptorId = btn.user.id;
+
+    // Don't let the requester accept their own quest
+    if (requesterId === acceptorId) {
+      await btn.reply({
+        content: "❌ You cannot accept your own quest.",
+        flags: 1 << 6,
+      });
+      return;
+    }
+
+    // Disable the accept button immediately
     const disabledButton = new ButtonBuilder()
       .setCustomId("accepted_disabled")
       .setLabel("✅ Accepted")
@@ -238,25 +343,44 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(disabledButton);
     await btn.update({ components: [row] });
 
-    // Post confirmation in thread
+    // Post confirmation in the forum thread
     const acceptedEmbed = new EmbedBuilder()
       .setColor(0x57f287)
-      .setTitle("✅ Commission Accepted")
-      .setDescription(`This commission has been accepted by <@${btn.user.id}>.`)
+      .setTitle("✅ Quest Accepted")
+      .setDescription(
+        `This quest has been accepted by <@${acceptorId}>.\n` +
+        `A private channel has been created for <@${requesterId}> and <@${acceptorId}> to coordinate.`
+      )
       .setTimestamp();
 
     await btn.followUp({ embeds: [acceptedEmbed] });
 
-    // Rename thread
+    // Rename the forum thread
     try {
       if (thread?.setName && !thread.name.startsWith("[ACCEPTED]")) {
         await thread.setName(`[ACCEPTED] ${thread.name}`.slice(0, 100));
       }
     } catch {
-      // Permission issue — not critical
+      // Not critical
     }
 
-    console.log(`✅ Commission accepted by ${btn.user.tag} in thread "${thread?.name}"`);
+    // Create the private channel
+    const privateChannel = await createPrivateCommissionChannel(
+      guild,
+      requesterId,
+      acceptorId,
+      thread.name,
+      thread.id
+    );
+
+    if (privateChannel) {
+      // Notify both users in the thread about the private channel
+      await btn.followUp({
+        content: `📬 <@${requesterId}> <@${acceptorId}> — your private channel is ready: <#${privateChannel.id}>`,
+      });
+    }
+
+    console.log(`✅ Quest accepted by ${btn.user.tag} in thread "${thread?.name}"`);
     return;
   }
 });
