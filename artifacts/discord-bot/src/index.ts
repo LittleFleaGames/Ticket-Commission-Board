@@ -284,12 +284,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle("📋 Quest Board")
+      .setTitle("🌟 Welcome to the Post-a-Quest Channel! 🌟")
       .setDescription(
-        "Looking for someone to help you out?\n\n" +
-        "Click the button below to post your quest. Fill in the details and it will appear in the quest forum for others to accept!"
-      )
-      .setFooter({ text: "Only use this channel to post quests" });
+        "Ready to embark on an exciting quest? Here's how it works:\n\n" +
+        "**Submit Your Quest:** Use the command /commission to open a form where you can enter all the necessary details about your quest. 🎉\n\n" +
+        "**Quest Approval:** Once submitted, a forum thread will automatically open in the Grand Exchange Forum for your quest to be reviewed! 📜\n\n" +
+        "**Connect with Your Client:** Once your quest is accepted, a dedicated room will be opened, allowing you to communicate directly with your client. 🤝💬\n\n" +
+        "if a quest need to be reopened just head back to the previously accepted quest in grand exchange and click the reopen button!✨"
+      );
 
     const postButton = new ButtonBuilder()
       .setCustomId("open_commission_modal")
