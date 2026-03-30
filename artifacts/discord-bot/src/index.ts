@@ -290,9 +290,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(acceptButton);
 
+      const previewText =
+        `**⚔️ Quest Type:** ${commissionType}\n` +
+        `**📝 What's needed:** ${description}\n` +
+        `**💰 Budget:** ${budget} · **⏰ Deadline:** ${deadline}`;
+
       const thread = await forum.threads.create({
         name: threadTitle,
         message: {
+          content: previewText,
           embeds: [embed],
           components: [row],
         },
