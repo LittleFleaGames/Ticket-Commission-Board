@@ -23,6 +23,7 @@ import {
 
 const DISCORD_BOT_TOKEN = process.env["DISCORD_BOT_TOKEN"];
 const FORUM_CHANNEL_ID = process.env["FORUM_CHANNEL_ID"];
+const POST_A_QUEST_CHANNEL_ID = "1486847104457638009";
 
 if (!DISCORD_BOT_TOKEN) throw new Error("DISCORD_BOT_TOKEN is required");
 if (!FORUM_CHANNEL_ID) throw new Error("FORUM_CHANNEL_ID is required");
@@ -80,6 +81,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // --- Slash command ---
   if (interaction.isChatInputCommand() && interaction.commandName === "commission") {
     const cmd = interaction as ChatInputCommandInteraction;
+
+    if (cmd.channelId !== POST_A_QUEST_CHANNEL_ID) {
+      await cmd.reply({
+        content: `❌ This command can only be used in <#${POST_A_QUEST_CHANNEL_ID}>.`,
+        ephemeral: true,
+      });
+      return;
+    }
 
     const modal = new ModalBuilder()
       .setCustomId("commission_modal")
