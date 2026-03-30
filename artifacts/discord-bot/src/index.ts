@@ -60,11 +60,16 @@ const client = new Client({
 });
 
 // ---------------------------------------------------------------------------
-// Slash command definition
+// Slash command definitions
 // ---------------------------------------------------------------------------
 const commissionCommand = new SlashCommandBuilder()
   .setName("commission")
   .setDescription("Post a quest request — a forum thread will be created for you");
+
+const setupCommand = new SlashCommandBuilder()
+  .setName("setup")
+  .setDescription("Post the quest board embed in this channel (admin only)")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
 
 // ---------------------------------------------------------------------------
 // Register slash commands for all guilds the bot is in
@@ -76,7 +81,7 @@ async function registerCommands(guildId: string): Promise<void> {
 
   try {
     await rest.put(Routes.applicationGuildCommands(appId, guildId), {
-      body: [commissionCommand.toJSON()],
+      body: [commissionCommand.toJSON(), setupCommand.toJSON()],
     });
     console.log(`✅ Slash commands registered for guild ${guildId}`);
   } catch (err) {
@@ -272,6 +277,90 @@ async function createQuestThread(
 // Handle interactions
 // ---------------------------------------------------------------------------
 client.on(Events.InteractionCreate, async (interaction) => {
+
+  // --- /setup command → post the quest board embed ---
+  if (interaction.isChatInputCommand() && interaction.commandName === "setup") {
+    const cmd = interaction as ChatInputCommandInteraction;
+
+    const embed = new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle("📋 Quest Board")
+      .setDescription(
+        "Looking for someone to help you out?\n\n" +
+        "Click the button below to post your quest. Fill in the details and it will appear in the quest forum for others to accept!"
+      )
+      .setFooter({ text: "Only use this channel to post quests" });
+
+    const postButton = new ButtonBuilder()
+      .setCustomId("open_commission_modal")
+      .setLabel("📜 Post a Quest")
+      .setStyle(ButtonStyle.Primary);
+
+    await cmd.reply({
+      embeds: [embed],
+      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(postButton)],
+    });
+    return;
+  }
+
+  // --- "Post a Quest" button → open modal directly ---
+  if (interaction.isButton() && interaction.customId === "open_commission_modal") {
+    const btn = interaction as ButtonInteraction;
+
+    if (btn.channelId !== POST_A_QUEST_CHANNEL_ID) {
+      await btn.reply({
+        content: `❌ This can only be used in <#${POST_A_QUEST_CHANNEL_ID}>.`,
+        flags: 1 << 6,
+      });
+      return;
+    }
+
+    const modal = new ModalBuilder()
+      .setCustomId("commission_modal")
+      .setTitle("Quest Request");
+
+    const typeInput = new TextInputBuilder()
+      .setCustomId("commission_type")
+      .setLabel("What type of quest do you want to post?")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("e.g. Blacksmithing, Gathering, Leatherworking, Mercenary...")
+      .setRequired(true)
+      .setMaxLength(100);
+
+    const descriptionInput = new TextInputBuilder()
+      .setCustomId("description")
+      .setLabel("Describe what you want in detail")
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder("Describe your quest in as much detail as possible...")
+      .setRequired(true)
+      .setMaxLength(1000);
+
+    const budgetInput = new TextInputBuilder()
+      .setCustomId("budget")
+      .setLabel("What is your budget?")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("e.g. 100 gold, 1000 gold, other item, etc.")
+      .setRequired(true)
+      .setMaxLength(100);
+
+    const deadlineInput = new TextInputBuilder()
+      .setCustomId("deadline")
+      .setLabel("What is your deadline / timeline?")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("e.g. 1 week, by March 10th, no rush...")
+      .setRequired(true)
+      .setMaxLength(100);
+
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(typeInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(descriptionInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(budgetInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(deadlineInput),
+    );
+
+    await btn.showModal(modal);
+    return;
+  }
 
   // --- /commission slash command → show modal ---
   if (interaction.isChatInputCommand() && interaction.commandName === "commission") {
