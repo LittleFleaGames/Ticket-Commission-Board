@@ -28,9 +28,20 @@ const DISCORD_BOT_TOKEN = process.env["DISCORD_BOT_TOKEN"];
 const FORUM_CHANNEL_ID = process.env["FORUM_CHANNEL_ID"];
 const POST_A_QUEST_CHANNEL_ID = "1486847104457638009";
 const COMMISSION_CATEGORY_ID = "1486848687706738889";
+const DELETE_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 if (!DISCORD_BOT_TOKEN) throw new Error("DISCORD_BOT_TOKEN is required");
 if (!FORUM_CHANNEL_ID) throw new Error("FORUM_CHANNEL_ID is required");
+
+// ---------------------------------------------------------------------------
+// In-memory store for pending deletions (survives until bot restart)
+// ---------------------------------------------------------------------------
+interface PendingDeletion {
+  timeout: ReturnType<typeof setTimeout>;
+  requesterId: string;
+  privateChannelId: string | null;
+}
+const pendingDeletions = new Map<string, PendingDeletion>(); // threadId → data
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -65,7 +76,6 @@ async function registerCommands(guildId: string): Promise<void> {
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`✅ Bot ready! Logged in as ${readyClient.user.tag}`);
   console.log(`🗂️  Forum channel: ${FORUM_CHANNEL_ID}`);
-
   for (const guild of readyClient.guilds.cache.values()) {
     await registerCommands(guild.id);
   }
@@ -83,13 +93,10 @@ async function createPrivateCommissionChannel(
   guild: Guild,
   requesterId: string,
   acceptorId: string,
-  questType: string,
   threadId: string
 ): Promise<TextChannel | null> {
   try {
     const botId = client.user!.id;
-
-    // Gather admin role IDs (roles with Administrator permission)
     const adminRoles = guild.roles.cache.filter((role) =>
       role.permissions.has(PermissionFlagsBits.Administrator)
     );
@@ -99,12 +106,7 @@ async function createPrivateCommissionChannel(
       type: ChannelType.GuildText,
       parent: COMMISSION_CATEGORY_ID,
       permissionOverwrites: [
-        // Deny everyone by default
-        {
-          id: guild.roles.everyone.id,
-          deny: [PermissionFlagsBits.ViewChannel],
-        },
-        // Allow the bot itself
+        { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
         {
           id: botId,
           allow: [
@@ -113,7 +115,6 @@ async function createPrivateCommissionChannel(
             PermissionFlagsBits.ManageChannels,
           ],
         },
-        // Allow the requester
         {
           id: requesterId,
           allow: [
@@ -122,7 +123,6 @@ async function createPrivateCommissionChannel(
             PermissionFlagsBits.ReadMessageHistory,
           ],
         },
-        // Allow the acceptor
         {
           id: acceptorId,
           allow: [
@@ -131,7 +131,6 @@ async function createPrivateCommissionChannel(
             PermissionFlagsBits.ReadMessageHistory,
           ],
         },
-        // Allow all admin roles
         ...adminRoles.map((role) => ({
           id: role.id,
           allow: [
@@ -144,7 +143,6 @@ async function createPrivateCommissionChannel(
       ],
     });
 
-    // Welcome message in the private channel
     const welcomeEmbed = new EmbedBuilder()
       .setColor(0x57f287)
       .setTitle("⚔️ Quest Accepted — Private Channel")
@@ -152,18 +150,43 @@ async function createPrivateCommissionChannel(
         `Welcome! This is your private channel for this quest.\n\n` +
         `**Requester:** <@${requesterId}>\n` +
         `**Acceptor:** <@${acceptorId}>\n\n` +
-        `You can discuss the details of the quest here. The original quest thread: <#${threadId}>`
+        `You can discuss the details of the quest here. Original quest thread: <#${threadId}>`
       )
       .setTimestamp();
 
     await channel.send({ embeds: [welcomeEmbed] });
-
     console.log(`✅ Created private channel: ${channel.name} (${channel.id})`);
     return channel;
   } catch (err) {
     console.error("❌ Failed to create private channel:", err);
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Schedule a thread for deletion after 24 hours
+// ---------------------------------------------------------------------------
+function scheduleDeletion(
+  thread: ThreadChannel,
+  requesterId: string,
+  privateChannelId: string | null
+): void {
+  // Clear any existing timer for this thread
+  const existing = pendingDeletions.get(thread.id);
+  if (existing) clearTimeout(existing.timeout);
+
+  const timeout = setTimeout(async () => {
+    try {
+      pendingDeletions.delete(thread.id);
+      await thread.delete("Auto-deleted 24 hours after quest acceptance");
+      console.log(`🗑️ Auto-deleted thread: ${thread.id}`);
+    } catch (err) {
+      console.error(`❌ Failed to auto-delete thread ${thread.id}:`, err);
+    }
+  }, DELETE_AFTER_MS);
+
+  pendingDeletions.set(thread.id, { timeout, requesterId, privateChannelId });
+  console.log(`⏳ Thread ${thread.id} scheduled for deletion in 24h`);
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +201,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (cmd.channelId !== POST_A_QUEST_CHANNEL_ID) {
       await cmd.reply({
         content: `❌ This command can only be used in <#${POST_A_QUEST_CHANNEL_ID}>.`,
-        flags: 1 << 6, // ephemeral
+        flags: 1 << 6,
       });
       return;
     }
@@ -242,7 +265,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // --- Modal submission → create forum thread ---
   if (interaction.isModalSubmit() && interaction.customId === "commission_modal") {
     const modal = interaction as ModalSubmitInteraction;
-    await modal.deferReply({ flags: 1 << 6 }); // ephemeral
+    await modal.deferReply({ flags: 1 << 6 });
 
     const commissionType = modal.fields.getTextInputValue("commission_type");
     const description = modal.fields.getTextInputValue("description");
@@ -282,7 +305,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         embed.addFields({ name: "📎 References / Extra Info", value: extras, inline: false });
       }
 
-      // Store requesterId in the button customId so we can use it on accept
       const acceptButton = new ButtonBuilder()
         .setCustomId(`accept_commission_${modal.user.id}`)
         .setLabel("✅ Accept Quest")
@@ -323,70 +345,148 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const btn = interaction as ButtonInteraction;
     const thread = interaction.channel as ThreadChannel;
     const guild = interaction.guild;
-
     if (!guild) return;
 
-    // Extract the original requester ID from the button customId
     const requesterId = btn.customId.replace("accept_commission_", "");
     const acceptorId = btn.user.id;
 
-    // Don't let the requester accept their own quest
     if (requesterId === acceptorId) {
-      await btn.reply({
-        content: "❌ You cannot accept your own quest.",
-        flags: 1 << 6,
-      });
+      await btn.reply({ content: "❌ You cannot accept your own quest.", flags: 1 << 6 });
       return;
     }
 
-    // Disable the accept button immediately
+    // Disable the Accept button
     const disabledButton = new ButtonBuilder()
       .setCustomId("accepted_disabled")
       .setLabel("✅ Accepted")
       .setStyle(ButtonStyle.Success)
       .setDisabled(true);
 
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(disabledButton);
-    await btn.update({ components: [row] });
-
-    // Post confirmation in the forum thread
-    const acceptedEmbed = new EmbedBuilder()
-      .setColor(0x57f287)
-      .setTitle("✅ Quest Accepted")
-      .setDescription(
-        `This quest has been accepted by <@${acceptorId}>.\n` +
-        `A private channel has been created for <@${requesterId}> and <@${acceptorId}> to coordinate.`
-      )
-      .setTimestamp();
-
-    await btn.followUp({ embeds: [acceptedEmbed] });
-
-    // Rename the forum thread
-    try {
-      if (thread?.setName && !thread.name.startsWith("[ACCEPTED]")) {
-        await thread.setName(`[ACCEPTED] ${thread.name}`.slice(0, 100));
-      }
-    } catch {
-      // Not critical
-    }
+    await btn.update({ components: [new ActionRowBuilder<ButtonBuilder>().addComponents(disabledButton)] });
 
     // Create the private channel
     const privateChannel = await createPrivateCommissionChannel(
       guild,
       requesterId,
       acceptorId,
-      thread.name,
       thread.id
     );
 
+    // Schedule thread deletion after 24 hours
+    scheduleDeletion(thread, requesterId, privateChannel?.id ?? null);
+
+    // Build the deletion timestamp for display
+    const deleteAt = Math.floor((Date.now() + DELETE_AFTER_MS) / 1000);
+
+    // Reopen button (only the requester can use it)
+    const reopenButton = new ButtonBuilder()
+      .setCustomId(`reopen_quest_${requesterId}`)
+      .setLabel("🔄 Reopen Quest")
+      .setStyle(ButtonStyle.Secondary);
+
+    const acceptedEmbed = new EmbedBuilder()
+      .setColor(0x57f287)
+      .setTitle("✅ Quest Accepted")
+      .setDescription(
+        `This quest has been accepted by <@${acceptorId}>.\n` +
+        `A private channel has been created for <@${requesterId}> and <@${acceptorId}>.\n\n` +
+        `⚠️ This thread will be **automatically deleted** <t:${deleteAt}:R>.\n` +
+        `Only <@${requesterId}> can reopen it before then.`
+      )
+      .setTimestamp();
+
+    await btn.followUp({
+      embeds: [acceptedEmbed],
+      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(reopenButton)],
+    });
+
     if (privateChannel) {
-      // Notify both users in the thread about the private channel
       await btn.followUp({
         content: `📬 <@${requesterId}> <@${acceptorId}> — your private channel is ready: <#${privateChannel.id}>`,
       });
     }
 
-    console.log(`✅ Quest accepted by ${btn.user.tag} in thread "${thread?.name}"`);
+    // Rename thread
+    try {
+      if (!thread.name.startsWith("[ACCEPTED]")) {
+        await thread.setName(`[ACCEPTED] ${thread.name}`.slice(0, 100));
+      }
+    } catch { /* not critical */ }
+
+    console.log(`✅ Quest accepted by ${btn.user.tag} in thread "${thread.name}"`);
+    return;
+  }
+
+  // --- Reopen Quest button ---
+  if (interaction.isButton() && interaction.customId.startsWith("reopen_quest_")) {
+    const btn = interaction as ButtonInteraction;
+    const thread = interaction.channel as ThreadChannel;
+    const guild = interaction.guild;
+    if (!guild) return;
+
+    const requesterId = btn.customId.replace("reopen_quest_", "");
+
+    // Only the original requester can reopen
+    if (btn.user.id !== requesterId) {
+      await btn.reply({
+        content: "❌ Only the person who posted this quest can reopen it.",
+        flags: 1 << 6,
+      });
+      return;
+    }
+
+    const pending = pendingDeletions.get(thread.id);
+
+    // Cancel the deletion timer
+    if (pending) {
+      clearTimeout(pending.timeout);
+      pendingDeletions.delete(thread.id);
+
+      // Delete the private channel if it exists
+      if (pending.privateChannelId) {
+        try {
+          const privateChannel = await guild.channels.fetch(pending.privateChannelId);
+          if (privateChannel) await privateChannel.delete("Quest reopened by requester");
+          console.log(`🗑️ Deleted private channel ${pending.privateChannelId}`);
+        } catch { /* already deleted or no permission */ }
+      }
+    }
+
+    // Remove [ACCEPTED] from thread name
+    try {
+      if (thread.name.startsWith("[ACCEPTED] ")) {
+        await thread.setName(thread.name.replace("[ACCEPTED] ", "").slice(0, 100));
+      }
+    } catch { /* not critical */ }
+
+    // Edit the accepted message to remove the reopen button
+    try {
+      await btn.update({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xfee75c)
+            .setTitle("🔄 Quest Reopened")
+            .setDescription(`<@${requesterId}> has reopened this quest. It is available to accept again.`)
+            .setTimestamp(),
+        ],
+        components: [],
+      });
+    } catch {
+      await btn.reply({ content: "🔄 Quest reopened.", flags: 1 << 6 });
+    }
+
+    // Post a fresh Accept button so others can take the quest again
+    const freshAcceptButton = new ButtonBuilder()
+      .setCustomId(`accept_commission_${requesterId}`)
+      .setLabel("✅ Accept Quest")
+      .setStyle(ButtonStyle.Success);
+
+    await btn.followUp({
+      content: `🔄 This quest is open again!`,
+      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(freshAcceptButton)],
+    });
+
+    console.log(`🔄 Quest reopened by ${btn.user.tag} in thread "${thread.name}"`);
     return;
   }
 });
