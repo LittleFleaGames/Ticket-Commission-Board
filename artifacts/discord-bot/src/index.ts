@@ -22,6 +22,9 @@ import {
   ChatInputCommandInteraction,
   PermissionFlagsBits,
   Guild,
+  RoleSelectMenuBuilder,
+  RoleSelectMenuInteraction,
+  Role,
 } from "discord.js";
 
 const DISCORD_BOT_TOKEN = process.env["DISCORD_BOT_TOKEN"];
@@ -34,7 +37,7 @@ if (!DISCORD_BOT_TOKEN) throw new Error("DISCORD_BOT_TOKEN is required");
 if (!FORUM_CHANNEL_ID) throw new Error("FORUM_CHANNEL_ID is required");
 
 // ---------------------------------------------------------------------------
-// In-memory store for pending deletions (survives until bot restart)
+// In-memory stores
 // ---------------------------------------------------------------------------
 interface PendingDeletion {
   timeout: ReturnType<typeof setTimeout>;
@@ -42,6 +45,14 @@ interface PendingDeletion {
   privateChannelId: string | null;
 }
 const pendingDeletions = new Map<string, PendingDeletion>(); // threadId → data
+
+interface PendingForm {
+  commissionType: string;
+  description: string;
+  budget: string;
+  deadline: string;
+}
+const pendingForms = new Map<string, PendingForm>(); // userId → form data
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -148,9 +159,9 @@ async function createPrivateCommissionChannel(
       .setTitle("⚔️ Quest Accepted — Private Channel")
       .setDescription(
         `Welcome! This is your private channel for this quest.\n\n` +
-        `**Requester:** <@${requesterId}>\n` +
-        `**Acceptor:** <@${acceptorId}>\n\n` +
-        `You can discuss the details of the quest here. Original quest thread: <#${threadId}>`
+          `**Requester:** <@${requesterId}>\n` +
+          `**Acceptor:** <@${acceptorId}>\n\n` +
+          `You can discuss the details of the quest here. Original quest thread: <#${threadId}>`
       )
       .setTimestamp();
 
@@ -171,7 +182,6 @@ function scheduleDeletion(
   requesterId: string,
   privateChannelId: string | null
 ): void {
-  // Clear any existing timer for this thread
   const existing = pendingDeletions.get(thread.id);
   if (existing) clearTimeout(existing.timeout);
 
@@ -187,6 +197,75 @@ function scheduleDeletion(
 
   pendingDeletions.set(thread.id, { timeout, requesterId, privateChannelId });
   console.log(`⏳ Thread ${thread.id} scheduled for deletion in 24h`);
+}
+
+// ---------------------------------------------------------------------------
+// Create the forum thread (shared between role-select and skip paths)
+// ---------------------------------------------------------------------------
+async function createQuestThread(
+  userId: string,
+  username: string,
+  avatarURL: string,
+  form: PendingForm,
+  professionRole: Role | null
+): Promise<string | null> {
+  try {
+    const forumChannel = await client.channels.fetch(FORUM_CHANNEL_ID!);
+    if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) return null;
+
+    const forum = forumChannel as ForumChannel;
+    const threadTitle = `[${form.commissionType}] — ${username}`.slice(0, 100);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle("📋 Quest Request")
+      .setAuthor({ name: username, iconURL: avatarURL })
+      .addFields(
+        { name: "⚔️ Quest Type", value: form.commissionType, inline: true },
+        { name: "💰 Budget", value: form.budget, inline: true },
+        { name: "⏰ Deadline", value: form.deadline, inline: true },
+        { name: "📝 Description", value: form.description, inline: false }
+      )
+      .setTimestamp()
+      .setFooter({ text: "Click Accept below to take this quest" });
+
+    if (professionRole) {
+      embed.addFields({
+        name: "🎓 Profession Required",
+        value: `<@&${professionRole.id}>`,
+        inline: false,
+      });
+    }
+
+    const acceptButton = new ButtonBuilder()
+      .setCustomId(`accept_commission_${userId}`)
+      .setLabel("✅ Accept Quest")
+      .setStyle(ButtonStyle.Success);
+
+    const professionLine = professionRole
+      ? `**🎓 Profession Required:** <@&${professionRole.id}> · `
+      : "";
+
+    const previewText =
+      `**⚔️ Quest Type:** ${form.commissionType}\n` +
+      `**📝 What's needed:** ${form.description}\n` +
+      `${professionLine}**💰 Budget:** ${form.budget} · **⏰ Deadline:** ${form.deadline}`;
+
+    const thread = await forum.threads.create({
+      name: threadTitle,
+      message: {
+        content: previewText,
+        embeds: [embed],
+        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(acceptButton)],
+      },
+    });
+
+    console.log(`✅ Created forum thread: "${threadTitle}" (${thread.id}) by ${username}`);
+    return thread.id;
+  } catch (err) {
+    console.error("❌ Failed to create forum thread:", err);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -242,99 +321,135 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setRequired(true)
       .setMaxLength(100);
 
-    const extrasInput = new TextInputBuilder()
-      .setCustomId("extras")
-      .setLabel("Any references or extra info? (optional)")
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder("Links, images, style references, special requirements...")
-      .setRequired(false)
-      .setMaxLength(800);
-
     modal.addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(typeInput),
       new ActionRowBuilder<TextInputBuilder>().addComponents(descriptionInput),
       new ActionRowBuilder<TextInputBuilder>().addComponents(budgetInput),
       new ActionRowBuilder<TextInputBuilder>().addComponents(deadlineInput),
-      new ActionRowBuilder<TextInputBuilder>().addComponents(extrasInput),
     );
 
     await cmd.showModal(modal);
     return;
   }
 
-  // --- Modal submission → create forum thread ---
+  // --- Modal submission → ask for profession requirement ---
   if (interaction.isModalSubmit() && interaction.customId === "commission_modal") {
     const modal = interaction as ModalSubmitInteraction;
-    await modal.deferReply({ flags: 1 << 6 });
 
-    const commissionType = modal.fields.getTextInputValue("commission_type");
-    const description = modal.fields.getTextInputValue("description");
-    const budget = modal.fields.getTextInputValue("budget");
-    const deadline = modal.fields.getTextInputValue("deadline");
-    const extras = modal.fields.getTextInputValue("extras") || null;
+    // Store form data temporarily
+    pendingForms.set(modal.user.id, {
+      commissionType: modal.fields.getTextInputValue("commission_type"),
+      description: modal.fields.getTextInputValue("description"),
+      budget: modal.fields.getTextInputValue("budget"),
+      deadline: modal.fields.getTextInputValue("deadline"),
+    });
 
-    try {
-      const forumChannel = await client.channels.fetch(FORUM_CHANNEL_ID!);
-      if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) {
-        await modal.editReply({
-          content: "❌ The forum channel is not configured correctly. Please contact a server admin.",
-        });
-        return;
-      }
+    // Ask for profession requirement using Discord's native role selector
+    const roleSelect = new RoleSelectMenuBuilder()
+      .setCustomId(`profession_select_${modal.user.id}`)
+      .setPlaceholder("Search and select a required profession...")
+      .setMinValues(0)
+      .setMaxValues(1);
 
-      const forum = forumChannel as ForumChannel;
-      const threadTitle = `[${commissionType}] — ${modal.user.username}`.slice(0, 100);
+    const skipButton = new ButtonBuilder()
+      .setCustomId(`profession_skip_${modal.user.id}`)
+      .setLabel("No specific profession required")
+      .setStyle(ButtonStyle.Secondary);
 
-      const embed = new EmbedBuilder()
-        .setColor(0x5865f2)
-        .setTitle("📋 Quest Request")
-        .setAuthor({
-          name: modal.user.username,
-          iconURL: modal.user.displayAvatarURL(),
-        })
-        .addFields(
-          { name: "⚔️ Quest Type", value: commissionType, inline: true },
-          { name: "💰 Budget", value: budget, inline: true },
-          { name: "⏰ Deadline", value: deadline, inline: true },
-          { name: "📝 Description", value: description, inline: false },
-        )
-        .setTimestamp()
-        .setFooter({ text: "Click Accept below to take this quest" });
+    await modal.reply({
+      content:
+        "**Almost done!** Does this quest require a specific profession?\n" +
+        "Pick one from the list below, or skip if anyone can take it.",
+      components: [
+        new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(roleSelect),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(skipButton),
+      ],
+      flags: 1 << 6,
+    });
+    return;
+  }
 
-      if (extras) {
-        embed.addFields({ name: "📎 References / Extra Info", value: extras, inline: false });
-      }
+  // --- Profession role selected ---
+  if (
+    interaction.isRoleSelectMenu() &&
+    interaction.customId.startsWith("profession_select_")
+  ) {
+    const select = interaction as RoleSelectMenuInteraction;
+    const userId = select.customId.replace("profession_select_", "");
 
-      const acceptButton = new ButtonBuilder()
-        .setCustomId(`accept_commission_${modal.user.id}`)
-        .setLabel("✅ Accept Quest")
-        .setStyle(ButtonStyle.Success);
+    if (select.user.id !== userId) return; // safety check
 
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(acceptButton);
+    const form = pendingForms.get(userId);
+    if (!form) {
+      await select.reply({ content: "❌ Session expired. Please run `/commission` again.", flags: 1 << 6 });
+      return;
+    }
+    pendingForms.delete(userId);
 
-      const previewText =
-        `**⚔️ Quest Type:** ${commissionType}\n` +
-        `**📝 What's needed:** ${description}\n` +
-        `**💰 Budget:** ${budget} · **⏰ Deadline:** ${deadline}`;
+    await select.deferUpdate();
 
-      const thread = await forum.threads.create({
-        name: threadTitle,
-        message: {
-          content: previewText,
-          embeds: [embed],
-          components: [row],
-        },
+    const selectedRole = select.values.length > 0
+      ? (select.roles.get(select.values[0]) as Role | undefined) ?? null
+      : null;
+
+    const threadId = await createQuestThread(
+      userId,
+      select.user.username,
+      select.user.displayAvatarURL(),
+      form,
+      selectedRole
+    );
+
+    if (threadId) {
+      await select.editReply({
+        content: `✅ Your quest has been posted! Check it out here: <#${threadId}>`,
+        components: [],
       });
-
-      console.log(`✅ Created forum thread: "${threadTitle}" (${thread.id}) by ${modal.user.tag}`);
-
-      await modal.editReply({
-        content: `✅ Your quest has been posted! Check it out here: <#${thread.id}>`,
-      });
-    } catch (err) {
-      console.error("❌ Failed to create forum thread:", err);
-      await modal.editReply({
+    } else {
+      await select.editReply({
         content: "❌ Something went wrong while creating your quest thread. Please try again.",
+        components: [],
+      });
+    }
+    return;
+  }
+
+  // --- Profession skip button ---
+  if (
+    interaction.isButton() &&
+    interaction.customId.startsWith("profession_skip_")
+  ) {
+    const btn = interaction as ButtonInteraction;
+    const userId = btn.customId.replace("profession_skip_", "");
+
+    if (btn.user.id !== userId) return; // safety check
+
+    const form = pendingForms.get(userId);
+    if (!form) {
+      await btn.reply({ content: "❌ Session expired. Please run `/commission` again.", flags: 1 << 6 });
+      return;
+    }
+    pendingForms.delete(userId);
+
+    await btn.deferUpdate();
+
+    const threadId = await createQuestThread(
+      userId,
+      btn.user.username,
+      btn.user.displayAvatarURL(),
+      form,
+      null
+    );
+
+    if (threadId) {
+      await btn.editReply({
+        content: `✅ Your quest has been posted! Check it out here: <#${threadId}>`,
+        components: [],
+      });
+    } else {
+      await btn.editReply({
+        content: "❌ Something went wrong while creating your quest thread. Please try again.",
+        components: [],
       });
     }
     return;
@@ -355,7 +470,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    // Disable the Accept button
     const disabledButton = new ButtonBuilder()
       .setCustomId("accepted_disabled")
       .setLabel("✅ Accepted")
@@ -364,7 +478,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     await btn.update({ components: [new ActionRowBuilder<ButtonBuilder>().addComponents(disabledButton)] });
 
-    // Create the private channel
     const privateChannel = await createPrivateCommissionChannel(
       guild,
       requesterId,
@@ -372,13 +485,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       thread.id
     );
 
-    // Schedule thread deletion after 24 hours
     scheduleDeletion(thread, requesterId, privateChannel?.id ?? null);
 
-    // Build the deletion timestamp for display
     const deleteAt = Math.floor((Date.now() + DELETE_AFTER_MS) / 1000);
 
-    // Reopen button (only the requester can use it)
     const reopenButton = new ButtonBuilder()
       .setCustomId(`reopen_quest_${requesterId}`)
       .setLabel("🔄 Reopen Quest")
@@ -389,9 +499,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setTitle("✅ Quest Accepted")
       .setDescription(
         `This quest has been accepted by <@${acceptorId}>.\n` +
-        `A private channel has been created for <@${requesterId}> and <@${acceptorId}>.\n\n` +
-        `⚠️ This thread will be **automatically deleted** <t:${deleteAt}:R>.\n` +
-        `Only <@${requesterId}> can reopen it before then.`
+          `A private channel has been created for <@${requesterId}> and <@${acceptorId}>.\n\n` +
+          `⚠️ This thread will be **automatically deleted** <t:${deleteAt}:R>.\n` +
+          `Only <@${requesterId}> can reopen it before then.`
       )
       .setTimestamp();
 
@@ -406,7 +516,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     }
 
-    // Rename thread
     try {
       if (!thread.name.startsWith("[ACCEPTED]")) {
         await thread.setName(`[ACCEPTED] ${thread.name}`.slice(0, 100));
@@ -426,7 +535,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const requesterId = btn.customId.replace("reopen_quest_", "");
 
-    // Only the original requester can reopen
     if (btn.user.id !== requesterId) {
       await btn.reply({
         content: "❌ Only the person who posted this quest can reopen it.",
@@ -436,37 +544,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     const pending = pendingDeletions.get(thread.id);
-
-    // Cancel the deletion timer
     if (pending) {
       clearTimeout(pending.timeout);
       pendingDeletions.delete(thread.id);
 
-      // Delete the private channel if it exists
       if (pending.privateChannelId) {
         try {
           const privateChannel = await guild.channels.fetch(pending.privateChannelId);
           if (privateChannel) await privateChannel.delete("Quest reopened by requester");
-          console.log(`🗑️ Deleted private channel ${pending.privateChannelId}`);
-        } catch { /* already deleted or no permission */ }
+        } catch { /* already deleted */ }
       }
     }
 
-    // Remove [ACCEPTED] from thread name
     try {
       if (thread.name.startsWith("[ACCEPTED] ")) {
         await thread.setName(thread.name.replace("[ACCEPTED] ", "").slice(0, 100));
       }
     } catch { /* not critical */ }
 
-    // Edit the accepted message to remove the reopen button
     try {
       await btn.update({
         embeds: [
           new EmbedBuilder()
             .setColor(0xfee75c)
             .setTitle("🔄 Quest Reopened")
-            .setDescription(`<@${requesterId}> has reopened this quest. It is available to accept again.`)
+            .setDescription(
+              `<@${requesterId}> has reopened this quest. It is available to accept again.`
+            )
             .setTimestamp(),
         ],
         components: [],
@@ -475,7 +579,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await btn.reply({ content: "🔄 Quest reopened.", flags: 1 << 6 });
     }
 
-    // Post a fresh Accept button so others can take the quest again
     const freshAcceptButton = new ButtonBuilder()
       .setCustomId(`accept_commission_${requesterId}`)
       .setLabel("✅ Accept Quest")
