@@ -25,13 +25,43 @@ import {
   RoleSelectMenuBuilder,
   RoleSelectMenuInteraction,
   Role,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  StringSelectMenuInteraction,
+  UserSelectMenuBuilder,
+  UserSelectMenuInteraction,
+  Message,
 } from "discord.js";
+import {
+  createChallenge,
+  createStep,
+  getChallengeByChannel,
+  getChallengeById,
+  updateChallengeMessageId,
+  markChallengeCompleted,
+  getAllActiveChallenges,
+  getSteps,
+  getStepById,
+  clearStep as dbClearStep,
+  addStepParticipants,
+  getStepParticipants,
+  addReputation,
+  getReputation,
+  getLeaderboard,
+} from "./db.js";
 
 const DISCORD_BOT_TOKEN = process.env["DISCORD_BOT_TOKEN"];
 const FORUM_CHANNEL_ID = process.env["FORUM_CHANNEL_ID"];
 const POST_A_QUEST_CHANNEL_ID = "1486847104457638009";
 const COMMISSION_CATEGORY_ID = "1486848687706738889";
 const DELETE_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Reputation point values
+const REP_QUEST_ACCEPT = 10;
+const REP_DUNGEON_CLEAR = 5;
+
+// Role name that can report dungeon clears (case-insensitive match)
+const LEADER_ROLE_NAME = "Quest Leader";
 
 if (!DISCORD_BOT_TOKEN) throw new Error("DISCORD_BOT_TOKEN is required");
 if (!FORUM_CHANNEL_ID) throw new Error("FORUM_CHANNEL_ID is required");
@@ -76,6 +106,36 @@ const testAcceptCommand = new SlashCommandBuilder()
   .setDescription("Admin only: simulate a quest acceptance to test private channel creation")
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
 
+const challengeCommand = new SlashCommandBuilder()
+  .setName("challenge")
+  .setDescription("World challenge commands")
+  .addSubcommand((sub) =>
+    sub
+      .setName("create")
+      .setDescription("Post a world challenge in this channel (admin only)")
+      .addStringOption((o) =>
+        o.setName("name").setDescription("Challenge title").setRequired(true).setMaxLength(100)
+      )
+      .addStringOption((o) =>
+        o.setName("deadline").setDescription("Deadline (e.g. April 30, 2026)").setRequired(true).setMaxLength(100)
+      )
+      .addStringOption((o) =>
+        o.setName("steps").setDescription("Comma-separated list of steps (e.g. Dungeon 1, Dungeon 2, ...)").setRequired(true).setMaxLength(1000)
+      )
+  )
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
+
+const repCommand = new SlashCommandBuilder()
+  .setName("rep")
+  .setDescription("Check reputation points")
+  .addUserOption((o) =>
+    o.setName("user").setDescription("Member to check (leave blank for yourself)").setRequired(false)
+  );
+
+const leaderboardCommand = new SlashCommandBuilder()
+  .setName("leaderboard")
+  .setDescription("Show the top 10 contributors on this server");
+
 // ---------------------------------------------------------------------------
 // Register slash commands for all guilds the bot is in
 // ---------------------------------------------------------------------------
@@ -86,7 +146,14 @@ async function registerCommands(guildId: string): Promise<void> {
 
   try {
     await rest.put(Routes.applicationGuildCommands(appId, guildId), {
-      body: [commissionCommand.toJSON(), setupCommand.toJSON(), testAcceptCommand.toJSON()],
+      body: [
+        commissionCommand.toJSON(),
+        setupCommand.toJSON(),
+        testAcceptCommand.toJSON(),
+        challengeCommand.toJSON(),
+        repCommand.toJSON(),
+        leaderboardCommand.toJSON(),
+      ],
     });
     console.log(`✅ Slash commands registered for guild ${guildId}`);
   } catch (err) {
@@ -100,12 +167,135 @@ client.once(Events.ClientReady, async (readyClient) => {
   for (const guild of readyClient.guilds.cache.values()) {
     await registerCommands(guild.id);
   }
+
+  // Re-schedule deadline checks for all active challenges that survived a restart
+  const active = getAllActiveChallenges();
+  for (const c of active) {
+    scheduleDeadlineCheck(c.id, c.deadline_ts);
+    console.log(`⏰ Re-scheduled deadline for challenge "${c.name}" (${c.id})`);
+  }
 });
 
 client.on(Events.GuildCreate, async (guild) => {
   console.log(`📥 Joined new guild: ${guild.name}`);
   await registerCommands(guild.id);
 });
+
+// ---------------------------------------------------------------------------
+// Utility: progress bar
+// ---------------------------------------------------------------------------
+function makeProgressBar(done: number, total: number, width = 20): string {
+  if (total === 0) return "░".repeat(width);
+  const filled = Math.round((done / total) * width);
+  return "█".repeat(filled) + "░".repeat(width - filled);
+}
+
+// ---------------------------------------------------------------------------
+// Utility: check if a guild member has the Leader role OR is an admin
+// ---------------------------------------------------------------------------
+function isLeader(
+  member: import("discord.js").GuildMember | null | undefined
+): boolean {
+  if (!member) return false;
+  if (member.permissions.has(PermissionFlagsBits.Administrator)) return true;
+  return member.roles.cache.some(
+    (r) => r.name.toLowerCase() === LEADER_ROLE_NAME.toLowerCase()
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Build the challenge embed + action row (can be called to refresh it)
+// ---------------------------------------------------------------------------
+function buildChallengeEmbed(
+  challengeId: string
+): { embed: EmbedBuilder; row: ActionRowBuilder<ButtonBuilder> } {
+  const challenge = getChallengeById(challengeId)!;
+  const steps = getSteps(challengeId);
+
+  const cleared = steps.filter((s) => s.cleared).length;
+  const total = steps.length;
+  const pct = total > 0 ? Math.round((cleared / total) * 100) : 0;
+  const bar = makeProgressBar(cleared, total);
+
+  const deadlineTs = Math.floor(challenge.deadline_ts / 1000);
+  const allDone = cleared === total;
+
+  let description =
+    `⏰ **Deadline:** <t:${deadlineTs}:D> (<t:${deadlineTs}:R>)\n` +
+    `**Progress: ${cleared}/${total} completed** · ${bar} ${pct}%\n\n`;
+
+  for (const step of steps) {
+    if (step.cleared) {
+      const participants = getStepParticipants(step.id);
+      const count = participants.length;
+      const clearedTs = Math.floor((step.cleared_at ?? 0) / 1000);
+      description += `✅ **${step.name}** · ${count} adventurer${count !== 1 ? "s" : ""} · <t:${clearedTs}:d>\n`;
+    } else {
+      description += `⏳ **${step.name}**\n`;
+    }
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(allDone ? 0x57f287 : 0xf1c40f)
+    .setTitle(`🌍 ${challenge.name}`)
+    .setDescription(description.trim())
+    .setFooter({
+      text: allDone
+        ? "🎉 Challenge complete!"
+        : `Only "Quest Leader" role members can report a clear`,
+    })
+    .setTimestamp();
+
+  const reportButton = new ButtonBuilder()
+    .setCustomId(`report_clear_${challengeId}`)
+    .setLabel("📋 Report a Clear")
+    .setStyle(ButtonStyle.Primary)
+    .setDisabled(allDone);
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(reportButton);
+  return { embed, row };
+}
+
+// ---------------------------------------------------------------------------
+// Schedule deadline failure message for a challenge
+// ---------------------------------------------------------------------------
+function scheduleDeadlineCheck(
+  challengeId: string,
+  deadlineTs: number
+): void {
+  const delay = deadlineTs - Date.now();
+  if (delay <= 0) return; // already passed
+
+  setTimeout(async () => {
+    const challenge = getChallengeById(challengeId);
+    if (!challenge || challenge.completed) return;
+
+    const steps = getSteps(challengeId);
+    const cleared = steps.filter((s) => s.cleared).length;
+    if (cleared === steps.length) return; // completed just in time
+
+    markChallengeCompleted(challengeId);
+
+    try {
+      const channel = await client.channels.fetch(challenge.channel_id);
+      if (!channel || !channel.isTextBased()) return;
+
+      const failEmbed = new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle("❌ Challenge Failed")
+        .setDescription(
+          `The deadline has passed for **${challenge.name}**.\n` +
+            `Only **${cleared}/${steps.length}** steps were completed.`
+        )
+        .setTimestamp();
+
+      await (channel as TextChannel).send({ embeds: [failEmbed] });
+      console.log(`⏰ Challenge ${challengeId} expired — ${cleared}/${steps.length} cleared`);
+    } catch (err) {
+      console.error(`❌ Failed to send challenge expiry message:`, err);
+    }
+  }, Math.min(delay, 2_147_483_647)); // cap at max 32-bit int to avoid setTimeout overflow
+}
 
 // ---------------------------------------------------------------------------
 // Create a private text channel between requester, acceptor, and admins
@@ -379,6 +569,312 @@ client.on(Events.InteractionCreate, async (interaction) => {
       console.error("❌ /testaccept failed:", err);
       await cmd.editReply({ content: `❌ Error: ${String(err)}` });
     }
+    return;
+  }
+
+  // --- /challenge create → post world challenge embed in current channel ---
+  if (
+    interaction.isChatInputCommand() &&
+    interaction.commandName === "challenge" &&
+    interaction.options.getSubcommand(false) === "create"
+  ) {
+    const cmd = interaction as ChatInputCommandInteraction;
+    const guild = cmd.guild;
+    if (!guild) return;
+
+    await cmd.deferReply({ flags: 1 << 6 });
+
+    const existing = getChallengeByChannel(cmd.channelId);
+    if (existing && !existing.completed) {
+      await cmd.editReply({
+        content: "❌ This channel already has an active challenge. Create a new channel for another one.",
+      });
+      return;
+    }
+
+    const name = cmd.options.getString("name", true);
+    const deadlineText = cmd.options.getString("deadline", true);
+    const stepsRaw = cmd.options.getString("steps", true);
+
+    const deadlineDate = new Date(deadlineText);
+    if (isNaN(deadlineDate.getTime())) {
+      await cmd.editReply({
+        content: `❌ Could not parse the deadline "${deadlineText}". Try a format like "April 30, 2026" or "2026-04-30".`,
+      });
+      return;
+    }
+
+    const stepNames = stepsRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (stepNames.length === 0) {
+      await cmd.editReply({ content: "❌ Please provide at least one step." });
+      return;
+    }
+    if (stepNames.length > 25) {
+      await cmd.editReply({ content: "❌ Maximum 25 steps per challenge." });
+      return;
+    }
+
+    const challengeId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    createChallenge(
+      challengeId,
+      guild.id,
+      cmd.channelId,
+      name,
+      deadlineText,
+      deadlineDate.getTime()
+    );
+
+    for (let i = 0; i < stepNames.length; i++) {
+      const stepId = `${challengeId}-${i}`;
+      createStep(stepId, challengeId, stepNames[i]!, i);
+    }
+
+    const { embed, row } = buildChallengeEmbed(challengeId);
+
+    // Post the challenge embed in the channel
+    const channel = cmd.channel as TextChannel;
+    const msg = await channel.send({ embeds: [embed], components: [row] });
+
+    // Pin it so it stays visible
+    try {
+      await msg.pin();
+    } catch { /* not critical */ }
+
+    updateChallengeMessageId(challengeId, msg.id);
+    scheduleDeadlineCheck(challengeId, deadlineDate.getTime());
+
+    await cmd.editReply({
+      content: `✅ World challenge **${name}** created with ${stepNames.length} steps!`,
+    });
+
+    console.log(
+      `🌍 Challenge "${name}" (${challengeId}) created in channel ${cmd.channelId} with ${stepNames.length} steps`
+    );
+    return;
+  }
+
+  // --- /rep → show reputation ---
+  if (interaction.isChatInputCommand() && interaction.commandName === "rep") {
+    const cmd = interaction as ChatInputCommandInteraction;
+    const target = cmd.options.getUser("user") ?? cmd.user;
+    const guildId = cmd.guildId;
+    if (!guildId) return;
+
+    const rep = getReputation(target.id, guildId);
+    const points = rep?.points ?? 0;
+    const isSelf = target.id === cmd.user.id;
+
+    const embed = new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle(`⭐ ${target.username}'s Reputation`)
+      .setThumbnail(target.displayAvatarURL())
+      .setDescription(
+        `${isSelf ? "You have" : `**${target.username}** has`} **${points} reputation point${points !== 1 ? "s" : ""}**.`
+      )
+      .setFooter({ text: "+10 for accepting a quest · +5 per dungeon clear" });
+
+    await cmd.reply({ embeds: [embed], flags: 1 << 6 });
+    return;
+  }
+
+  // --- /leaderboard → top 10 contributors ---
+  if (interaction.isChatInputCommand() && interaction.commandName === "leaderboard") {
+    const cmd = interaction as ChatInputCommandInteraction;
+    const guildId = cmd.guildId;
+    if (!guildId) return;
+
+    const top = getLeaderboard(guildId, 10);
+
+    const embed = new EmbedBuilder()
+      .setColor(0xf1c40f)
+      .setTitle("🏆 Top Contributors");
+
+    if (top.length === 0) {
+      embed.setDescription("No reputation earned yet. Accept quests and clear dungeons to climb the ranks!");
+    } else {
+      const medals = ["🥇", "🥈", "🥉"];
+      const lines = top.map((r, i) => {
+        const medal = medals[i] ?? `**${i + 1}.**`;
+        return `${medal} **${r.username}** — ${r.points} pts`;
+      });
+      embed.setDescription(lines.join("\n"));
+    }
+
+    await cmd.reply({ embeds: [embed] });
+    return;
+  }
+
+  // --- "📋 Report a Clear" button → show step selector (leaders only) ---
+  if (interaction.isButton() && interaction.customId.startsWith("report_clear_")) {
+    const btn = interaction as ButtonInteraction;
+    const guild = btn.guild;
+    if (!guild) return;
+
+    if (!isLeader(btn.member as import("discord.js").GuildMember)) {
+      await btn.reply({
+        content: `❌ Only members with the **${LEADER_ROLE_NAME}** role (or admins) can report a clear.`,
+        flags: 1 << 6,
+      });
+      return;
+    }
+
+    const challengeId = btn.customId.replace("report_clear_", "");
+    const steps = getSteps(challengeId);
+    const unclearedSteps = steps.filter((s) => !s.cleared);
+
+    if (unclearedSteps.length === 0) {
+      await btn.reply({ content: "🎉 All steps are already cleared!", flags: 1 << 6 });
+      return;
+    }
+
+    const stepSelect = new StringSelectMenuBuilder()
+      .setCustomId(`step_select_${challengeId}`)
+      .setPlaceholder("Which dungeon/step was cleared?")
+      .addOptions(
+        unclearedSteps.map((s) =>
+          new StringSelectMenuOptionBuilder().setLabel(s.name).setValue(s.id)
+        )
+      );
+
+    await btn.reply({
+      content: "**Step 1/2** — Which step was cleared?",
+      components: [
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(stepSelect),
+      ],
+      flags: 1 << 6,
+    });
+    return;
+  }
+
+  // --- Step select menu → show participant picker ---
+  if (
+    interaction.isStringSelectMenu() &&
+    interaction.customId.startsWith("step_select_")
+  ) {
+    const select = interaction as StringSelectMenuInteraction;
+    const challengeId = select.customId.replace("step_select_", "");
+    const stepId = select.values[0]!;
+    const step = getStepById(stepId);
+    if (!step) {
+      await select.reply({ content: "❌ Step not found.", flags: 1 << 6 });
+      return;
+    }
+
+    const participantSelect = new UserSelectMenuBuilder()
+      .setCustomId(`participants_select_${challengeId}_${stepId}`)
+      .setPlaceholder("Select all participants...")
+      .setMinValues(1)
+      .setMaxValues(25);
+
+    await select.update({
+      content: `**Step 2/2** — **${step.name}** was cleared! Who participated? Select all members:`,
+      components: [
+        new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+          participantSelect
+        ),
+      ],
+    });
+    return;
+  }
+
+  // --- Participant select menu → record clear and update embed ---
+  if (
+    interaction.isUserSelectMenu() &&
+    interaction.customId.startsWith("participants_select_")
+  ) {
+    const select = interaction as UserSelectMenuInteraction;
+    const [, , challengeId, stepId] = select.customId.split("_") as [
+      string,
+      string,
+      string,
+      string
+    ];
+
+    const guild = select.guild;
+    if (!guild || !challengeId || !stepId) return;
+
+    const challenge = getChallengeById(challengeId);
+    const step = getStepById(stepId);
+    if (!challenge || !step) {
+      await select.update({ content: "❌ Challenge or step not found.", components: [] });
+      return;
+    }
+
+    if (step.cleared) {
+      await select.update({ content: "❌ This step was already cleared.", components: [] });
+      return;
+    }
+
+    // Record the clear
+    dbClearStep(stepId, select.user.id, select.user.username);
+
+    const participants = select.users.map((u) => ({
+      userId: u.id,
+      username: u.username,
+    }));
+    addStepParticipants(stepId, participants);
+
+    // Award rep to each participant
+    for (const p of participants) {
+      addReputation(p.userId, guild.id, p.username, REP_DUNGEON_CLEAR);
+    }
+
+    const steps = getSteps(challengeId);
+    const clearedCount = steps.filter((s) => s.cleared).length;
+    const allDone = clearedCount === steps.length;
+
+    if (allDone) markChallengeCompleted(challengeId);
+
+    // Refresh the sticky embed
+    if (challenge.message_id) {
+      try {
+        const channel = await client.channels.fetch(challenge.channel_id);
+        if (channel && channel.isTextBased()) {
+          const msg = await (channel as TextChannel).messages.fetch(
+            challenge.message_id
+          );
+          const { embed, row } = buildChallengeEmbed(challengeId);
+          await msg.edit({ embeds: [embed], components: [row] });
+        }
+      } catch (err) {
+        console.error("❌ Failed to refresh challenge embed:", err);
+      }
+    }
+
+    const participantMentions = participants.map((p) => `<@${p.userId}>`).join(", ");
+    await select.update({
+      content:
+        `✅ **${step.name}** marked as cleared!\n` +
+        `**Participants:** ${participantMentions}\n` +
+        `Each earned **+${REP_DUNGEON_CLEAR} reputation**!` +
+        (allDone ? "\n\n🎉 **All steps complete — Challenge finished!**" : ""),
+      components: [],
+    });
+
+    if (allDone) {
+      try {
+        const channel = await client.channels.fetch(challenge.channel_id);
+        if (channel && channel.isTextBased()) {
+          const celebEmbed = new EmbedBuilder()
+            .setColor(0x57f287)
+            .setTitle("🎉 World Challenge Complete!")
+            .setDescription(
+              `The server has conquered **${challenge.name}**! Every step has been cleared.\n\n` +
+                `An incredible effort from all participants. Glory to the Grand Exchange! ⚔️`
+            )
+            .setTimestamp();
+          await (channel as TextChannel).send({ embeds: [celebEmbed] });
+        }
+      } catch { /* not critical */ }
+    }
+
+    console.log(
+      `✅ Step "${step.name}" cleared by ${select.user.tag} · ${participants.length} participants · rep +${REP_DUNGEON_CLEAR} each`
+    );
     return;
   }
 
@@ -690,6 +1186,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     } catch { /* not critical */ }
 
+    // Award reputation to the acceptor
+    addReputation(acceptorId, guild.id, btn.user.username, REP_QUEST_ACCEPT);
+    console.log(`⭐ +${REP_QUEST_ACCEPT} rep awarded to ${btn.user.tag}`);
     console.log(`✅ Quest accepted by ${btn.user.tag} in thread "${thread.name}"`);
     return;
   }
