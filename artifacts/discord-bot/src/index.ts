@@ -71,6 +71,11 @@ const setupCommand = new SlashCommandBuilder()
   .setDescription("Post the quest board embed in this channel (admin only)")
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
 
+const testAcceptCommand = new SlashCommandBuilder()
+  .setName("testaccept")
+  .setDescription("Admin only: simulate a quest acceptance to test private channel creation")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
+
 // ---------------------------------------------------------------------------
 // Register slash commands for all guilds the bot is in
 // ---------------------------------------------------------------------------
@@ -81,7 +86,7 @@ async function registerCommands(guildId: string): Promise<void> {
 
   try {
     await rest.put(Routes.applicationGuildCommands(appId, guildId), {
-      body: [commissionCommand.toJSON(), setupCommand.toJSON()],
+      body: [commissionCommand.toJSON(), setupCommand.toJSON(), testAcceptCommand.toJSON()],
     });
     console.log(`✅ Slash commands registered for guild ${guildId}`);
   } catch (err) {
@@ -316,6 +321,64 @@ client.on(Events.InteractionCreate, async (interaction) => {
       embeds: [embed],
       components: [new ActionRowBuilder<ButtonBuilder>().addComponents(postButton)],
     });
+    return;
+  }
+
+  // --- /testaccept command → simulate full accept flow for testing ---
+  if (interaction.isChatInputCommand() && interaction.commandName === "testaccept") {
+    const cmd = interaction as ChatInputCommandInteraction;
+    const guild = cmd.guild;
+    if (!guild) return;
+
+    await cmd.deferReply({ flags: 1 << 6 });
+
+    // Create a real test forum thread so we have a valid thread ID
+    try {
+      const forumChannel = await client.channels.fetch(FORUM_CHANNEL_ID!);
+      if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) {
+        await cmd.editReply({ content: "❌ Forum channel not found or not a forum." });
+        return;
+      }
+
+      const forum = forumChannel as ForumChannel;
+      const thread = await forum.threads.create({
+        name: `[TEST] Quest — ${cmd.user.username}`,
+        message: {
+          content: "🧪 This is a test quest created by `/testaccept`. It will be deleted shortly.",
+        },
+      });
+
+      console.log(`🧪 Test thread created: ${thread.id}`);
+
+      // Use the command user as requester and the bot itself as acceptor
+      const requesterId = cmd.user.id;
+      const acceptorId = client.user!.id;
+
+      const privateChannel = await createPrivateCommissionChannel(
+        guild,
+        requesterId,
+        acceptorId,
+        thread.id
+      );
+
+      if (privateChannel) {
+        await cmd.editReply({
+          content:
+            `✅ Test passed! Private channel created: <#${privateChannel.id}>\n` +
+            `Check the bot console logs for the category diagnostic info.`,
+        });
+      } else {
+        await cmd.editReply({
+          content: "❌ Private channel creation failed — check the bot console logs for details.",
+        });
+      }
+
+      // Clean up the test thread after 10 seconds
+      setTimeout(() => thread.delete("Test quest cleanup").catch(() => {}), 10_000);
+    } catch (err) {
+      console.error("❌ /testaccept failed:", err);
+      await cmd.editReply({ content: `❌ Error: ${String(err)}` });
+    }
     return;
   }
 
