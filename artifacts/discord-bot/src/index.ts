@@ -113,6 +113,19 @@ async function createPrivateCommissionChannel(
 ): Promise<TextChannel | null> {
   try {
     const botId = client.user!.id;
+
+    // Verify the target category exists and is actually a category
+    try {
+      const targetCategory = await guild.channels.fetch(COMMISSION_CATEGORY_ID);
+      if (!targetCategory) {
+        console.error(`❌ Category ${COMMISSION_CATEGORY_ID} not found in guild`);
+      } else {
+        console.log(`📁 Target category: "${targetCategory.name}" (type: ${targetCategory.type}, id: ${targetCategory.id})`);
+      }
+    } catch (err) {
+      console.error(`❌ Could not fetch category ${COMMISSION_CATEGORY_ID}:`, err);
+    }
+
     const adminRoles = guild.roles.cache.filter((role) =>
       role.permissions.has(PermissionFlagsBits.Administrator)
     );
@@ -171,7 +184,8 @@ async function createPrivateCommissionChannel(
       .setTimestamp();
 
     await channel.send({ embeds: [welcomeEmbed] });
-    console.log(`✅ Created private channel: ${channel.name} (${channel.id})`);
+    console.log(`✅ Created private channel: "${channel.name}" (${channel.id})`);
+    console.log(`📁 Channel placed in category: ${channel.parentId ?? "no category"}`);
     return channel;
   } catch (err) {
     console.error("❌ Failed to create private channel:", err);
