@@ -5,12 +5,12 @@ version = "1.0.0"
 id = "3B4_FFSkEVBkAeYMFRJ2e"
 
 [[services]]
-localPort = 8080
+localPort = 3000
 name = "Discord Bot"
 paths = ["/api"]
 
 [services.development]
-run = "pnpm --filter @workspace/api-server run dev"
+run = "pnpm --filter @workspace/discord-bot run dev"
 
 [services.production]
 
@@ -18,7 +18,7 @@ run = "pnpm --filter @workspace/api-server run dev"
 args = ["pnpm", "--filter", "@workspace/discord-bot", "run", "start"]
 
 [services.production.run.env]
-PORT = "8080"
+PORT = "3000"
 NODE_ENV = "production"
 
 [services.production.health.startup]

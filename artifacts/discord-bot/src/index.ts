@@ -1385,19 +1385,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 // ---------------------------------------------------------------------------
-// Health-check HTTP server (required by Replit deployment to verify the
-// process is alive — responds 200 OK to any request).
-// Only starts when PORT is explicitly set (i.e. in production).
+// Health-check HTTP server — keeps the process alive and lets Replit verify
+// the service is running. Responds 200 OK to any request.
 // ---------------------------------------------------------------------------
 import { createServer as createHttpServer } from "http";
-if (process.env.PORT) {
-  const _healthPort = parseInt(process.env.PORT, 10);
-  createHttpServer((_req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("OK");
-  }).listen(_healthPort, () => {
-    console.log(`🏥 Health server listening on port ${_healthPort}`);
-  });
-}
+const _healthPort = parseInt(process.env.PORT ?? "3000", 10);
+createHttpServer((_req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("OK");
+}).listen(_healthPort, () => {
+  console.log(`🏥 Health server listening on port ${_healthPort}`);
+});
 
 client.login(DISCORD_BOT_TOKEN);
