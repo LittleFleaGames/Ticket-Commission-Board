@@ -375,8 +375,7 @@ async function createPrivateCommissionChannel(
           `**Requester:** <@${requesterId}>\n` +
           `**Acceptor:** <@${acceptorId}>\n\n` +
           `Discuss the details here. Original quest thread: <#${threadId}>\n\n` +
-          `When the work is done, either party can click **Complete Quest** below. ` +
-          `This will close the channel and mark the quest as finished.`
+          `When the work is done, <@${requesterId}> can click **Complete Quest** below to close this channel and mark the quest as finished.`
       )
       .setFooter({ text: "This channel auto-deletes 24h after acceptance if not completed" })
       .setTimestamp();
@@ -1217,9 +1216,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const acceptorId  = parts[3]!;
     const threadId    = parts[4]!;
 
-    if (btn.user.id !== requesterId && btn.user.id !== acceptorId) {
+    if (btn.user.id !== requesterId) {
       await btn.reply({
-        content: "❌ Only the quest requester or acceptor can complete this quest.",
+        content: "❌ Only the person who posted this quest can mark it as complete.",
         flags: 1 << 6,
       });
       return;
