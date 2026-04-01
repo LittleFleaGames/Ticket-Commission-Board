@@ -304,7 +304,9 @@ async function createPrivateCommissionChannel(
   guild: Guild,
   requesterId: string,
   acceptorId: string,
-  threadId: string
+  threadId: string,
+  requesterName: string,
+  acceptorName: string
 ): Promise<TextChannel | null> {
   try {
     const botId = client.user!.id;
@@ -325,8 +327,13 @@ async function createPrivateCommissionChannel(
       role.permissions.has(PermissionFlagsBits.Administrator)
     );
 
+    // Sanitize usernames for Discord channel name (lowercase, alphanumeric + hyphens only)
+    const sanitize = (name: string) =>
+      name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 20);
+    const channelName = `quest-${sanitize(requesterName)}-${sanitize(acceptorName)}`.slice(0, 100);
+
     const channel = await guild.channels.create({
-      name: `quest-${requesterId}-${acceptorId}`.slice(0, 100),
+      name: channelName,
       type: ChannelType.GuildText,
       parent: COMMISSION_CATEGORY_ID,
       permissionOverwrites: [
@@ -558,7 +565,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         guild,
         requesterId,
         acceptorId,
-        thread.id
+        thread.id,
+        cmd.user.username,
+        client.user!.username
       );
 
       if (privateChannel) {
@@ -1152,11 +1161,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     await btn.update({ components: [new ActionRowBuilder<ButtonBuilder>().addComponents(disabledButton)] });
 
+    // Fetch requester's username for the channel name
+    let requesterName = requesterId;
+    try {
+      const requesterMember = await guild.members.fetch(requesterId);
+      requesterName = requesterMember.user.username;
+    } catch { /* fallback to id */ }
+
     const privateChannel = await createPrivateCommissionChannel(
       guild,
       requesterId,
       acceptorId,
-      thread.id
+      thread.id,
+      requesterName,
+      btn.user.username
     );
 
     scheduleDeletion(thread, requesterId, privateChannel?.id ?? null);
