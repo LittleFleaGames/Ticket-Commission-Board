@@ -1316,6 +1316,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const requesterId = btn.customId.replace("reopen_quest_", "");
 
+    // Block reopen if the quest was already completed
+    if (thread.name.startsWith("[COMPLETE]")) {
+      await btn.reply({
+        content: "❌ This quest has already been completed and cannot be reopened.",
+        flags: 1 << 6,
+      });
+      return;
+    }
+
     if (btn.user.id !== requesterId) {
       await btn.reply({
         content: "❌ Only the person who posted this quest can reopen it.",
