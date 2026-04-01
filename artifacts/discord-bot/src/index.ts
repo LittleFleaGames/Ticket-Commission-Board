@@ -374,11 +374,22 @@ async function createPrivateCommissionChannel(
         `Welcome! This is your private channel for this quest.\n\n` +
           `**Requester:** <@${requesterId}>\n` +
           `**Acceptor:** <@${acceptorId}>\n\n` +
-          `You can discuss the details of the quest here. Original quest thread: <#${threadId}>`
+          `Discuss the details here. Original quest thread: <#${threadId}>\n\n` +
+          `When the work is done, either party can click **Complete Quest** below. ` +
+          `This will close the channel and mark the quest as finished.`
       )
+      .setFooter({ text: "This channel auto-deletes 24h after acceptance if not completed" })
       .setTimestamp();
 
-    await channel.send({ embeds: [welcomeEmbed] });
+    const completeButton = new ButtonBuilder()
+      .setCustomId(`complete_quest_${requesterId}_${acceptorId}_${threadId}`)
+      .setLabel("✅ Complete Quest")
+      .setStyle(ButtonStyle.Success);
+
+    await channel.send({
+      embeds: [welcomeEmbed],
+      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(completeButton)],
+    });
     console.log(`✅ Created private channel: "${channel.name}" (${channel.id})`);
     console.log(`📁 Channel placed in category: ${channel.parentId ?? "no category"}`);
     return channel;
@@ -1190,6 +1201,92 @@ client.on(Events.InteractionCreate, async (interaction) => {
     addReputation(acceptorId, guild.id, btn.user.username, REP_QUEST_ACCEPT);
     console.log(`⭐ +${REP_QUEST_ACCEPT} rep awarded to ${btn.user.tag}`);
     console.log(`✅ Quest accepted by ${btn.user.tag} in thread "${thread.name}"`);
+    return;
+  }
+
+  // --- Complete Quest button → close private channel, mark thread complete ---
+  if (interaction.isButton() && interaction.customId.startsWith("complete_quest_")) {
+    const btn = interaction as ButtonInteraction;
+    const guild = btn.guild;
+    if (!guild) return;
+
+    // Custom ID format: complete_quest_${requesterId}_${acceptorId}_${threadId}
+    const parts = btn.customId.split("_");
+    // parts: ["complete", "quest", requesterId, acceptorId, threadId]
+    const requesterId = parts[2]!;
+    const acceptorId  = parts[3]!;
+    const threadId    = parts[4]!;
+
+    if (btn.user.id !== requesterId && btn.user.id !== acceptorId) {
+      await btn.reply({
+        content: "❌ Only the quest requester or acceptor can complete this quest.",
+        flags: 1 << 6,
+      });
+      return;
+    }
+
+    // Disable the button immediately so it can't be double-clicked
+    const disabledComplete = new ButtonBuilder()
+      .setCustomId("complete_disabled")
+      .setLabel("✅ Quest Completed")
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(true);
+
+    await btn.update({
+      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(disabledComplete)],
+    });
+
+    // Cancel the 24h auto-delete timer for the forum thread
+    const pending = pendingDeletions.get(threadId);
+    if (pending) {
+      clearTimeout(pending.timeout);
+      pendingDeletions.delete(threadId);
+    }
+
+    // Mark the forum thread as [COMPLETE] and post a closing message
+    try {
+      const thread = await guild.channels.fetch(threadId) as ThreadChannel | null;
+      if (thread) {
+        const completionEmbed = new EmbedBuilder()
+          .setColor(0x57f287)
+          .setTitle("🏆 Quest Completed!")
+          .setDescription(
+            `This quest has been successfully completed!\n\n` +
+              `**Requester:** <@${requesterId}>\n` +
+              `**Completed by:** <@${acceptorId}>\n\n` +
+              `Thank you for using the Grand Exchange. ⚔️`
+          )
+          .setTimestamp();
+
+        await thread.send({ embeds: [completionEmbed] });
+
+        if (!thread.name.startsWith("[COMPLETE]")) {
+          const cleanName = thread.name.replace("[ACCEPTED] ", "");
+          await thread.setName(`[COMPLETE] ${cleanName}`.slice(0, 100));
+        }
+        await thread.setArchived(true).catch(() => {});
+      }
+    } catch (err) {
+      console.error("❌ Failed to update forum thread on completion:", err);
+    }
+
+    // Post a goodbye message in the private channel then delete it after 10s
+    await btn.followUp({
+      content:
+        `✅ Quest marked as complete by <@${btn.user.id}>!\n` +
+        `This channel will be deleted in **10 seconds**.`,
+    });
+
+    setTimeout(async () => {
+      try {
+        const privateChannel = await guild.channels.fetch(btn.channelId);
+        if (privateChannel) await privateChannel.delete("Quest completed");
+      } catch { /* already gone */ }
+    }, 10_000);
+
+    console.log(
+      `🏆 Quest completed by ${btn.user.tag} — thread ${threadId} archived, channel closing`
+    );
     return;
   }
 
