@@ -19,8 +19,8 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json tsconfig
 COPY artifacts/discord-bot ./artifacts/discord-bot
 COPY lib ./lib
 
-# Install dependencies (frozen lockfile = reproducible build)
-RUN pnpm install --frozen-lockfile
+# Install dependencies
+RUN pnpm install --no-frozen-lockfile
 
 # Ensure the SQLite data directory exists and persists
 RUN mkdir -p /app/artifacts/discord-bot/data
