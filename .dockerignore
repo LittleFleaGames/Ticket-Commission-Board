@@ -1,0 +1,18 @@
+node_modules
+.git
+attached_assets
+
+# Other artifacts not needed for the bot
+artifacts/api-server
+artifacts/mockup-sandbox
+
+# Local DB (Railway will use a fresh one; add a volume if you want persistence)
+artifacts/discord-bot/data
+
+# Replit-specific files
+.replit
+replit.nix
+.local
+
+*.log
+*.md
