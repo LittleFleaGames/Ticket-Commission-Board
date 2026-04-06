@@ -52,7 +52,7 @@ import {
   getRoleMessage,
   getSkillByMessage,
 } from "./db.js";
-import { SKILLS, TIER_EMOJIS } from "./skills.js";
+import { SKILLS, TIER_EMOJIS, getTierEmojis, reactionEmojiKey } from "./skills.js";
 
 const DISCORD_BOT_TOKEN = process.env["DISCORD_BOT_TOKEN"];
 const FORUM_CHANNEL_ID = process.env["FORUM_CHANNEL_ID"];
@@ -165,14 +165,15 @@ const refreshRolesCommand = new SlashCommandBuilder()
 // Shared embed builder for a single skill
 // ---------------------------------------------------------------------------
 function buildSkillEmbed(skill: (typeof SKILLS)[number]): EmbedBuilder {
+  const te = getTierEmojis(skill);
   return new EmbedBuilder()
     .setColor(0xf1c40f)
     .setTitle(`${skill.emoji}  ${skill.name}`)
     .setDescription(
       `React to choose your **${skill.name}** proficiency:\n\n` +
-        `${TIER_EMOJIS[0]} — **${skill.roles[0]}**\n` +
-        `${TIER_EMOJIS[1]} — **${skill.roles[1]}**\n` +
-        `${TIER_EMOJIS[2]} — **${skill.roles[2]}**`
+        `${te[0]} — **${skill.roles[0]}**\n` +
+        `${te[1]} — **${skill.roles[1]}**\n` +
+        `${te[2]} — **${skill.roles[2]}**`
     )
     .setFooter({ text: "React to any tier to receive that role. Remove your reaction to drop it." });
 }
@@ -791,7 +792,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       try {
         const msg = await channel.send({ embeds: [buildSkillEmbed(skill)] });
-        for (const emoji of TIER_EMOJIS) {
+        for (const emoji of getTierEmojis(skill)) {
           await msg.react(emoji);
         }
         upsertRoleMessage(skill.name, guildId, channel.id, msg.id);
@@ -833,7 +834,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
       try {
         const ch = (await client.channels.fetch(record.channel_id)) as TextChannel;
         const msg = await ch.messages.fetch(record.message_id);
+        // Update embed content
         await msg.edit({ embeds: [buildSkillEmbed(skill)] });
+        // Refresh reactions: remove all bot reactions, re-add current tier emojis
+        await msg.reactions.removeAll();
+        for (const emoji of getTierEmojis(skill)) {
+          await msg.react(emoji);
+        }
         updated++;
       } catch (err) {
         console.error(`❌ Failed to refresh embed for "${skill.name}":`, err);
@@ -1524,15 +1531,18 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   const guild = reaction.message.guild;
   if (!guild) return;
 
-  const emoji = reaction.emoji.name ?? "";
-  const tierIndex = (TIER_EMOJIS as readonly string[]).indexOf(emoji);
-  if (tierIndex === -1) return;
-
+  // Identify the skill this message belongs to
   const skillName = getSkillByMessage(reaction.message.id, guild.id);
   if (!skillName) return;
 
   const skill = SKILLS.find((s) => s.name === skillName);
   if (!skill) return;
+
+  // Match the reaction emoji against this skill's tier emojis
+  const emojiKey = reactionEmojiKey(reaction.emoji);
+  const tierEmojis = getTierEmojis(skill);
+  const tierIndex = (tierEmojis as string[]).indexOf(emojiKey);
+  if (tierIndex === -1) return;
 
   let member: import("discord.js").GuildMember;
   try {
@@ -1541,7 +1551,6 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
     return;
   }
 
-  // Add the chosen tier role
   const chosenRole = guild.roles.cache.find((r) => r.name === skill.roles[tierIndex]);
   if (chosenRole) {
     await member.roles.add(chosenRole).catch(console.error);
@@ -1563,15 +1572,18 @@ client.on(Events.MessageReactionRemove, async (reaction, user) => {
   const guild = reaction.message.guild;
   if (!guild) return;
 
-  const emoji = reaction.emoji.name ?? "";
-  const tierIndex = (TIER_EMOJIS as readonly string[]).indexOf(emoji);
-  if (tierIndex === -1) return;
-
+  // Identify the skill this message belongs to
   const skillName = getSkillByMessage(reaction.message.id, guild.id);
   if (!skillName) return;
 
   const skill = SKILLS.find((s) => s.name === skillName);
   if (!skill) return;
+
+  // Match the reaction emoji against this skill's tier emojis
+  const emojiKey = reactionEmojiKey(reaction.emoji);
+  const tierEmojis = getTierEmojis(skill);
+  const tierIndex = (tierEmojis as string[]).indexOf(emojiKey);
+  if (tierIndex === -1) return;
 
   let member: import("discord.js").GuildMember;
   try {
