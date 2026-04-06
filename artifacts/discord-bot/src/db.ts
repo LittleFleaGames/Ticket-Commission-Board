@@ -48,6 +48,14 @@ db.exec(`
     points INTEGER DEFAULT 0,
     PRIMARY KEY (user_id, guild_id)
   );
+
+  CREATE TABLE IF NOT EXISTS role_messages (
+    skill_name TEXT NOT NULL,
+    guild_id   TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    PRIMARY KEY (skill_name, guild_id)
+  );
 `);
 
 // ---------------------------------------------------------------------------
@@ -237,6 +245,48 @@ export function getLeaderboard(
       "SELECT * FROM reputation WHERE guild_id = ? ORDER BY points DESC LIMIT ?"
     )
     .all(guildId, limit) as Reputation[];
+}
+
+// ---------------------------------------------------------------------------
+// Role-message helpers
+// ---------------------------------------------------------------------------
+
+export function upsertRoleMessage(
+  skillName: string,
+  guildId: string,
+  channelId: string,
+  messageId: string
+): void {
+  db.prepare(
+    `INSERT INTO role_messages (skill_name, guild_id, channel_id, message_id)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(skill_name, guild_id) DO UPDATE SET
+       channel_id = excluded.channel_id,
+       message_id = excluded.message_id`
+  ).run(skillName, guildId, channelId, messageId);
+}
+
+export function getRoleMessage(
+  skillName: string,
+  guildId: string
+): { channel_id: string; message_id: string } | undefined {
+  return db
+    .prepare(
+      "SELECT channel_id, message_id FROM role_messages WHERE skill_name = ? AND guild_id = ?"
+    )
+    .get(skillName, guildId) as { channel_id: string; message_id: string } | undefined;
+}
+
+export function getSkillByMessage(
+  messageId: string,
+  guildId: string
+): string | undefined {
+  const row = db
+    .prepare(
+      "SELECT skill_name FROM role_messages WHERE message_id = ? AND guild_id = ?"
+    )
+    .get(messageId, guildId) as { skill_name: string } | undefined;
+  return row?.skill_name;
 }
 
 export default db;

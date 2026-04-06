@@ -48,7 +48,11 @@ import {
   addReputation,
   getReputation,
   getLeaderboard,
+  upsertRoleMessage,
+  getRoleMessage,
+  getSkillByMessage,
 } from "./db.js";
+import { SKILLS, TIER_EMOJIS } from "./skills.js";
 
 const DISCORD_BOT_TOKEN = process.env["DISCORD_BOT_TOKEN"];
 const FORUM_CHANNEL_ID = process.env["FORUM_CHANNEL_ID"];
@@ -85,8 +89,16 @@ interface PendingForm {
 const pendingForms = new Map<string, PendingForm>(); // userId → form data
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
-  partials: [Partials.Channel],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessageReactions,
+  ],
+  partials: [
+    Partials.Channel,
+    Partials.Message,
+    Partials.Reaction,
+    Partials.User,
+  ],
 });
 
 // ---------------------------------------------------------------------------
@@ -136,6 +148,35 @@ const leaderboardCommand = new SlashCommandBuilder()
   .setName("leaderboard")
   .setDescription("Show the top 10 contributors on this server");
 
+const setupRolesCommand = new SlashCommandBuilder()
+  .setName("setup-roles")
+  .setDescription("Post skill role selection embeds in a channel (admin only)")
+  .addChannelOption((o) =>
+    o.setName("channel").setDescription("Channel to post the skill embeds in").setRequired(true)
+  )
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
+
+const refreshRolesCommand = new SlashCommandBuilder()
+  .setName("refresh-roles")
+  .setDescription("Edit existing skill embeds with the current config — no repost needed (admin only)")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
+
+// ---------------------------------------------------------------------------
+// Shared embed builder for a single skill
+// ---------------------------------------------------------------------------
+function buildSkillEmbed(skill: (typeof SKILLS)[number]): EmbedBuilder {
+  return new EmbedBuilder()
+    .setColor(0xf1c40f)
+    .setTitle(`${skill.emoji}  ${skill.name}`)
+    .setDescription(
+      `React to choose your **${skill.name}** proficiency:\n\n` +
+        `${TIER_EMOJIS[0]} — **${skill.roles[0]}**\n` +
+        `${TIER_EMOJIS[1]} — **${skill.roles[1]}**\n` +
+        `${TIER_EMOJIS[2]} — **${skill.roles[2]}**`
+    )
+    .setFooter({ text: "Picking a new tier removes your current one automatically." });
+}
+
 // ---------------------------------------------------------------------------
 // Register slash commands for all guilds the bot is in
 // ---------------------------------------------------------------------------
@@ -153,6 +194,8 @@ async function registerCommands(guildId: string): Promise<void> {
         challengeCommand.toJSON(),
         repCommand.toJSON(),
         leaderboardCommand.toJSON(),
+        setupRolesCommand.toJSON(),
+        refreshRolesCommand.toJSON(),
       ],
     });
     console.log(`✅ Slash commands registered for guild ${guildId}`);
@@ -724,6 +767,87 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     await cmd.reply({ embeds: [embed] });
+    return;
+  }
+
+  // --- /setup-roles → post skill embeds in a channel ---
+  if (interaction.isChatInputCommand() && interaction.commandName === "setup-roles") {
+    const cmd = interaction as ChatInputCommandInteraction;
+    const guildId = cmd.guildId;
+    if (!guildId) return;
+
+    const channel = cmd.options.getChannel("channel", true) as TextChannel;
+    await cmd.deferReply({ flags: 1 << 6 });
+
+    let posted = 0;
+    let skipped = 0;
+
+    for (const skill of SKILLS) {
+      const existing = getRoleMessage(skill.name, guildId);
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const msg = await channel.send({ embeds: [buildSkillEmbed(skill)] });
+        for (const emoji of TIER_EMOJIS) {
+          await msg.react(emoji);
+        }
+        upsertRoleMessage(skill.name, guildId, channel.id, msg.id);
+        posted++;
+      } catch (err) {
+        console.error(`❌ Failed to post embed for skill "${skill.name}":`, err);
+      }
+    }
+
+    await cmd.editReply({
+      content:
+        `✅ Posted **${posted}** skill embed${posted !== 1 ? "s" : ""}` +
+        (skipped > 0
+          ? `. Skipped **${skipped}** already posted — use \`/refresh-roles\` to update them.`
+          : "!"),
+    });
+    return;
+  }
+
+  // --- /refresh-roles → edit existing skill embeds without reposting ---
+  if (interaction.isChatInputCommand() && interaction.commandName === "refresh-roles") {
+    const cmd = interaction as ChatInputCommandInteraction;
+    const guildId = cmd.guildId;
+    if (!guildId) return;
+
+    await cmd.deferReply({ flags: 1 << 6 });
+
+    let updated = 0;
+    let failed = 0;
+    let notFound = 0;
+
+    for (const skill of SKILLS) {
+      const record = getRoleMessage(skill.name, guildId);
+      if (!record) {
+        notFound++;
+        continue;
+      }
+
+      try {
+        const ch = (await client.channels.fetch(record.channel_id)) as TextChannel;
+        const msg = await ch.messages.fetch(record.message_id);
+        await msg.edit({ embeds: [buildSkillEmbed(skill)] });
+        updated++;
+      } catch (err) {
+        console.error(`❌ Failed to refresh embed for "${skill.name}":`, err);
+        failed++;
+      }
+    }
+
+    await cmd.editReply({
+      content:
+        `✅ Refreshed **${updated}** embed${updated !== 1 ? "s" : ""}` +
+        (notFound > 0 ? ` · **${notFound}** not yet posted (run \`/setup-roles\` to add them)` : "") +
+        (failed > 0 ? ` · ⚠️ **${failed}** failed (message may have been deleted)` : "") +
+        ".",
+    });
     return;
   }
 
@@ -1381,6 +1505,100 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     console.log(`🔄 Quest reopened by ${btn.user.tag} in thread "${thread.name}"`);
     return;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Reaction role handlers
+// ---------------------------------------------------------------------------
+client.on(Events.MessageReactionAdd, async (reaction, user) => {
+  if (user.bot) return;
+
+  try {
+    if (reaction.partial) await reaction.fetch();
+    if (reaction.message.partial) await reaction.message.fetch();
+  } catch {
+    return;
+  }
+
+  const guild = reaction.message.guild;
+  if (!guild) return;
+
+  const emoji = reaction.emoji.name ?? "";
+  const tierIndex = (TIER_EMOJIS as readonly string[]).indexOf(emoji);
+  if (tierIndex === -1) return;
+
+  const skillName = getSkillByMessage(reaction.message.id, guild.id);
+  if (!skillName) return;
+
+  const skill = SKILLS.find((s) => s.name === skillName);
+  if (!skill) return;
+
+  let member: import("discord.js").GuildMember;
+  try {
+    member = await guild.members.fetch(user.id);
+  } catch {
+    return;
+  }
+
+  // Add the chosen tier role
+  const chosenRole = guild.roles.cache.find((r) => r.name === skill.roles[tierIndex]);
+  if (chosenRole) {
+    await member.roles.add(chosenRole).catch(console.error);
+  }
+
+  // Remove other tier roles and their reactions from this user
+  for (let i = 0; i < TIER_EMOJIS.length; i++) {
+    if (i === tierIndex) continue;
+
+    const otherRole = guild.roles.cache.find((r) => r.name === skill.roles[i]);
+    if (otherRole && member.roles.cache.has(otherRole.id)) {
+      await member.roles.remove(otherRole).catch(console.error);
+    }
+
+    const otherReaction = reaction.message.reactions.cache.get(TIER_EMOJIS[i]);
+    if (otherReaction) {
+      await otherReaction.users.remove(user.id).catch(console.error);
+    }
+  }
+
+  console.log(`🎭 Assigned "${skill.roles[tierIndex]}" to ${user.tag}`);
+});
+
+client.on(Events.MessageReactionRemove, async (reaction, user) => {
+  if (user.bot) return;
+
+  try {
+    if (reaction.partial) await reaction.fetch();
+    if (reaction.message.partial) await reaction.message.fetch();
+  } catch {
+    return;
+  }
+
+  const guild = reaction.message.guild;
+  if (!guild) return;
+
+  const emoji = reaction.emoji.name ?? "";
+  const tierIndex = (TIER_EMOJIS as readonly string[]).indexOf(emoji);
+  if (tierIndex === -1) return;
+
+  const skillName = getSkillByMessage(reaction.message.id, guild.id);
+  if (!skillName) return;
+
+  const skill = SKILLS.find((s) => s.name === skillName);
+  if (!skill) return;
+
+  let member: import("discord.js").GuildMember;
+  try {
+    member = await guild.members.fetch(user.id);
+  } catch {
+    return;
+  }
+
+  const role = guild.roles.cache.find((r) => r.name === skill.roles[tierIndex]);
+  if (role && member.roles.cache.has(role.id)) {
+    await member.roles.remove(role).catch(console.error);
+    console.log(`🎭 Removed "${skill.roles[tierIndex]}" from ${user.tag}`);
   }
 });
 
