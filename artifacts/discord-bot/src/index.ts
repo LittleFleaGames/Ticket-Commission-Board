@@ -51,6 +51,9 @@ import {
   upsertRoleMessage,
   getRoleMessage,
   getSkillByMessage,
+  upsertPendingDeletion,
+  cancelPendingDeletion,
+  getAllPendingDeletions,
 } from "./db.js";
 import { SKILLS, TIER_EMOJIS, getTierEmojis, reactionEmojiKey } from "./skills.js";
 
@@ -218,6 +221,32 @@ client.once(Events.ClientReady, async (readyClient) => {
     scheduleDeadlineCheck(c.id, c.deadline_ts);
     console.log(`⏰ Re-scheduled deadline for challenge "${c.name}" (${c.id})`);
   }
+
+  // Restore pending thread deletions that survived a restart
+  const pendingRows = getAllPendingDeletions();
+  for (const row of pendingRows) {
+    try {
+      const guild = readyClient.guilds.cache.get(row.guild_id);
+      if (!guild) { cancelPendingDeletion(row.thread_id); continue; }
+      const channel = await guild.channels.fetch(row.thread_id).catch(() => null);
+      if (!channel) {
+        // Thread is already gone — clean up DB entry
+        cancelPendingDeletion(row.thread_id);
+        console.log(`🗑️ Thread ${row.thread_id} already deleted — cleared from DB`);
+        continue;
+      }
+      scheduleDeletion(
+        channel as ThreadChannel,
+        row.requester_id,
+        row.private_channel_id,
+        row.delete_at
+      );
+    } catch (err) {
+      console.error(`❌ Failed to restore deletion for thread ${row.thread_id}:`, err);
+      cancelPendingDeletion(row.thread_id);
+    }
+  }
+  console.log(`🔄 Restored ${pendingRows.length} pending deletion(s) from DB`);
 });
 
 client.on(Events.GuildCreate, async (guild) => {
@@ -455,23 +484,42 @@ async function createPrivateCommissionChannel(
 function scheduleDeletion(
   thread: ThreadChannel,
   requesterId: string,
-  privateChannelId: string | null
+  privateChannelId: string | null,
+  deleteAt?: number  // optional: supply a specific timestamp (for restoring from DB)
 ): void {
   const existing = pendingDeletions.get(thread.id);
   if (existing) clearTimeout(existing.timeout);
 
+  const now = Date.now();
+  const resolvedDeleteAt = deleteAt ?? now + DELETE_AFTER_MS;
+  const delay = Math.max(0, resolvedDeleteAt - now);
+
+  // Persist so the timer survives restarts
+  upsertPendingDeletion(
+    thread.id,
+    thread.guildId,
+    requesterId,
+    privateChannelId,
+    resolvedDeleteAt
+  );
+
   const timeout = setTimeout(async () => {
     try {
       pendingDeletions.delete(thread.id);
+      cancelPendingDeletion(thread.id);
       await thread.delete("Auto-deleted 24 hours after quest acceptance");
       console.log(`🗑️ Auto-deleted thread: ${thread.id}`);
     } catch (err) {
       console.error(`❌ Failed to auto-delete thread ${thread.id}:`, err);
     }
-  }, DELETE_AFTER_MS);
+  }, delay);
 
   pendingDeletions.set(thread.id, { timeout, requesterId, privateChannelId });
-  console.log(`⏳ Thread ${thread.id} scheduled for deletion in 24h`);
+  console.log(
+    delay === 0
+      ? `🗑️ Thread ${thread.id} is overdue — deleting immediately`
+      : `⏳ Thread ${thread.id} scheduled for deletion in ${Math.round(delay / 60000)}min`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1394,6 +1442,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       clearTimeout(pending.timeout);
       pendingDeletions.delete(threadId);
     }
+    cancelPendingDeletion(threadId);
 
     // Mark the forum thread as [COMPLETE] and post a closing message
     try {
@@ -1469,6 +1518,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     const pending = pendingDeletions.get(thread.id);
+    cancelPendingDeletion(thread.id);
     if (pending) {
       clearTimeout(pending.timeout);
       pendingDeletions.delete(thread.id);

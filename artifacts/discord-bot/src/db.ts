@@ -56,6 +56,14 @@ db.exec(`
     message_id TEXT NOT NULL,
     PRIMARY KEY (skill_name, guild_id)
   );
+
+  CREATE TABLE IF NOT EXISTS pending_deletions (
+    thread_id          TEXT PRIMARY KEY,
+    guild_id           TEXT NOT NULL,
+    requester_id       TEXT NOT NULL,
+    private_channel_id TEXT,
+    delete_at          INTEGER NOT NULL
+  );
 `);
 
 // ---------------------------------------------------------------------------
@@ -287,6 +295,46 @@ export function getSkillByMessage(
     )
     .get(messageId, guildId) as { skill_name: string } | undefined;
   return row?.skill_name;
+}
+
+// ---------------------------------------------------------------------------
+// Pending-deletion helpers
+// ---------------------------------------------------------------------------
+
+export interface PendingDeletionRow {
+  thread_id: string;
+  guild_id: string;
+  requester_id: string;
+  private_channel_id: string | null;
+  delete_at: number;
+}
+
+export function upsertPendingDeletion(
+  threadId: string,
+  guildId: string,
+  requesterId: string,
+  privateChannelId: string | null,
+  deleteAt: number
+): void {
+  db.prepare(
+    `INSERT INTO pending_deletions (thread_id, guild_id, requester_id, private_channel_id, delete_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(thread_id) DO UPDATE SET
+       guild_id = excluded.guild_id,
+       requester_id = excluded.requester_id,
+       private_channel_id = excluded.private_channel_id,
+       delete_at = excluded.delete_at`
+  ).run(threadId, guildId, requesterId, privateChannelId, deleteAt);
+}
+
+export function cancelPendingDeletion(threadId: string): void {
+  db.prepare("DELETE FROM pending_deletions WHERE thread_id = ?").run(threadId);
+}
+
+export function getAllPendingDeletions(): PendingDeletionRow[] {
+  return db
+    .prepare("SELECT * FROM pending_deletions")
+    .all() as PendingDeletionRow[];
 }
 
 export default db;
