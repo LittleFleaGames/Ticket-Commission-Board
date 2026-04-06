@@ -22,7 +22,7 @@ export interface SkillConfig {
 }
 
 export const SKILLS: SkillConfig[] = [
-  { name: "Combat",        emoji: "⚔️",  roles: ["Combat I",        "Combat II",        "Combat III"]        },
+  { name: "Combat",        emoji: "⚔️",  roles: ["DPS",        "Healer",        "Tank"]        },
   { name: "Magic",         emoji: "🔮",  roles: ["Magic I",         "Magic II",         "Magic III"]         },
   { name: "Archery",       emoji: "🏹",  roles: ["Archery I",       "Archery II",       "Archery III"]       },
   { name: "Alchemy",       emoji: "⚗️",  roles: ["Alchemy I",       "Alchemy II",       "Alchemy III"]       },

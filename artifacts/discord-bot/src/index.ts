@@ -174,7 +174,7 @@ function buildSkillEmbed(skill: (typeof SKILLS)[number]): EmbedBuilder {
         `${TIER_EMOJIS[1]} — **${skill.roles[1]}**\n` +
         `${TIER_EMOJIS[2]} — **${skill.roles[2]}**`
     )
-    .setFooter({ text: "Picking a new tier removes your current one automatically." });
+    .setFooter({ text: "React to any tier to receive that role. Remove your reaction to drop it." });
 }
 
 // ---------------------------------------------------------------------------
@@ -1545,21 +1545,6 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   const chosenRole = guild.roles.cache.find((r) => r.name === skill.roles[tierIndex]);
   if (chosenRole) {
     await member.roles.add(chosenRole).catch(console.error);
-  }
-
-  // Remove other tier roles and their reactions from this user
-  for (let i = 0; i < TIER_EMOJIS.length; i++) {
-    if (i === tierIndex) continue;
-
-    const otherRole = guild.roles.cache.find((r) => r.name === skill.roles[i]);
-    if (otherRole && member.roles.cache.has(otherRole.id)) {
-      await member.roles.remove(otherRole).catch(console.error);
-    }
-
-    const otherReaction = reaction.message.reactions.cache.get(TIER_EMOJIS[i]);
-    if (otherReaction) {
-      await otherReaction.users.remove(user.id).catch(console.error);
-    }
   }
 
   console.log(`🎭 Assigned "${skill.roles[tierIndex]}" to ${user.tag}`);
