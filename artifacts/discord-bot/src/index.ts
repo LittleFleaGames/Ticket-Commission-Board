@@ -1566,6 +1566,11 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
 client.on(Events.MessageReactionRemove, async (reaction, user) => {
   if (user.bot) return;
 
+  // Small delay to let any in-flight ReactionAdd finish first.
+  // Without this a quick double-click races: remove fires before add
+  // completes, finds no role yet, exits — then add finishes and role sticks.
+  await new Promise((res) => setTimeout(res, 600));
+
   try {
     if (reaction.partial) await reaction.fetch();
     if (reaction.message.partial) await reaction.message.fetch();
