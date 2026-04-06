@@ -31,7 +31,7 @@ export const SKILLS: SkillConfig[] = [
   {
     name: "Combat",
     emoji: "⚔️",
-    roles: ["Combat 10-20", "Combat 21-30", "Combat 31-40"],
+    roles: ["Dps", "Healer", "Tank"],
     // ⚔️ = DPS  |  ⚕️ = Healer  |  🛡️ = Tank
     // To use custom server emojis replace with e.g. "<:dps:1234567890>"
     tierEmojis: ["⚔️", "⚕️", "🛡️"],
