@@ -457,7 +457,7 @@ async function createPrivateCommissionChannel(
           `Discuss the details here. Original quest thread: <#${threadId}>\n\n` +
           `When the work is done, <@${requesterId}> can click **Complete Quest** below to close this channel and mark the quest as finished.`
       )
-      .setFooter({ text: "This channel auto-deletes 24h after acceptance if not completed" })
+      .setFooter({ text: "This channel will be deleted when the quest is marked complete" })
       .setTimestamp();
 
     const completeButton = new ButtonBuilder()
@@ -1360,10 +1360,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       btn.user.username
     );
 
-    scheduleDeletion(thread, requesterId, privateChannel?.id ?? null);
-
-    const deleteAt = Math.floor((Date.now() + DELETE_AFTER_MS) / 1000);
-
     const reopenButton = new ButtonBuilder()
       .setCustomId(`reopen_quest_${requesterId}`)
       .setLabel("🔄 Reopen Quest")
@@ -1375,8 +1371,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setDescription(
         `This quest has been accepted by <@${acceptorId}>.\n` +
           `A private channel has been created for <@${requesterId}> and <@${acceptorId}>.\n\n` +
-          `⚠️ This thread will be **automatically deleted** <t:${deleteAt}:R>.\n` +
-          `Only <@${requesterId}> can reopen it before then.`
+          `This thread will remain open until <@${requesterId}> marks it as complete.\n` +
+          `Only <@${requesterId}> can reopen it if needed.`
       )
       .setTimestamp();
 
@@ -1436,42 +1432,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       components: [new ActionRowBuilder<ButtonBuilder>().addComponents(disabledComplete)],
     });
 
-    // Cancel the 24h auto-delete timer for the forum thread
-    const pending = pendingDeletions.get(threadId);
-    if (pending) {
-      clearTimeout(pending.timeout);
-      pendingDeletions.delete(threadId);
-    }
-    cancelPendingDeletion(threadId);
-
-    // Mark the forum thread as [COMPLETE] and post a closing message
-    try {
-      const thread = await guild.channels.fetch(threadId) as ThreadChannel | null;
-      if (thread) {
-        const completionEmbed = new EmbedBuilder()
-          .setColor(0x57f287)
-          .setTitle("🏆 Quest Completed!")
-          .setDescription(
-            `This quest has been successfully completed!\n\n` +
-              `**Requester:** <@${requesterId}>\n` +
-              `**Completed by:** <@${acceptorId}>\n\n` +
-              `Thank you for using the Grand Exchange. ⚔️`
-          )
-          .setTimestamp();
-
-        await thread.send({ embeds: [completionEmbed] });
-
-        if (!thread.name.startsWith("[COMPLETE]")) {
-          const cleanName = thread.name.replace("[ACCEPTED] ", "");
-          await thread.setName(`[COMPLETE] ${cleanName}`.slice(0, 100));
-        }
-        await thread.setArchived(true).catch(() => {});
-      }
-    } catch (err) {
-      console.error("❌ Failed to update forum thread on completion:", err);
-    }
-
-    // Post a goodbye message in the private channel then delete it after 10s
+    // Post completion notice in the private channel then delete it after 10s
     await btn.followUp({
       content:
         `✅ Quest marked as complete by <@${btn.user.id}>!\n` +
@@ -1485,8 +1446,36 @@ client.on(Events.InteractionCreate, async (interaction) => {
       } catch { /* already gone */ }
     }, 10_000);
 
+    // Post a completion embed in the forum thread, then delete it after 30s
+    try {
+      const thread = await guild.channels.fetch(threadId) as ThreadChannel | null;
+      if (thread) {
+        const completionEmbed = new EmbedBuilder()
+          .setColor(0x57f287)
+          .setTitle("🏆 Quest Completed!")
+          .setDescription(
+            `This quest has been successfully completed!\n\n` +
+              `**Requester:** <@${requesterId}>\n` +
+              `**Completed by:** <@${acceptorId}>\n\n` +
+              `Thank you for using the Grand Exchange. ⚔️\n\n` +
+              `_This thread will be deleted in 30 seconds._`
+          )
+          .setTimestamp();
+
+        await thread.send({ embeds: [completionEmbed] });
+
+        setTimeout(async () => {
+          try {
+            await thread.delete("Quest completed");
+          } catch { /* already gone */ }
+        }, 30_000);
+      }
+    } catch (err) {
+      console.error("❌ Failed to post completion message or delete forum thread:", err);
+    }
+
     console.log(
-      `🏆 Quest completed by ${btn.user.tag} — thread ${threadId} archived, channel closing`
+      `🏆 Quest completed by ${btn.user.tag} — thread ${threadId} deleting in 30s, channel closing`
     );
     return;
   }
@@ -1515,20 +1504,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         flags: 1 << 6,
       });
       return;
-    }
-
-    const pending = pendingDeletions.get(thread.id);
-    cancelPendingDeletion(thread.id);
-    if (pending) {
-      clearTimeout(pending.timeout);
-      pendingDeletions.delete(thread.id);
-
-      if (pending.privateChannelId) {
-        try {
-          const privateChannel = await guild.channels.fetch(pending.privateChannelId);
-          if (privateChannel) await privateChannel.delete("Quest reopened by requester");
-        } catch { /* already deleted */ }
-      }
     }
 
     try {
