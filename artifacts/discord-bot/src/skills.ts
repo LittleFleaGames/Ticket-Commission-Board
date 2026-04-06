@@ -2,27 +2,40 @@
 // Skill Role Configuration
 // ---------------------------------------------------------------------------
 // Edit this file freely:
-//   • Reorder entries  → run /refresh-roles to update the channel order
-//   • Rename skills    → run /refresh-roles (also rename the Discord roles!)
-//   • Add a skill      → create the 3 Discord roles first, add entry here,
-//                        then run /setup-roles to post the new embed
-//   • Remove a skill   → delete the entry here (the old embed becomes inert
-//                        but stays in the channel; delete it manually if needed)
+//   • Reorder entries        → run /refresh-roles
+//   • Rename skills/roles    → run /refresh-roles (also rename roles in Discord!)
+//   • Add a skill            → create the 3 Discord roles, add entry here,
+//                              then run /setup-roles
+//   • Remove a skill         → delete the entry (old embed becomes inert)
+//   • Custom tier emojis     → set `tierEmojis` on any skill to override the
+//                              default 1️⃣ 2️⃣ 3️⃣ for that skill only.
+//                              For custom server emojis use the full string
+//                              format e.g. "<:tankicon:1234567890>"
 //
 // Role names must match EXACTLY what you created in Discord server settings.
 // ---------------------------------------------------------------------------
 
+// Default tier emojis used by all skills that don't set their own
 export const TIER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣"] as const;
-export type TierEmoji = (typeof TIER_EMOJIS)[number];
 
 export interface SkillConfig {
   name: string;
   emoji: string;
-  roles: [string, string, string]; // [Tier 1 role name, Tier 2, Tier 3]
+  roles: [string, string, string]; // [slot-0 role name, slot-1, slot-2]
+  // Optional: override the three reaction emojis for this skill only.
+  // Must be exactly 3 items. Omit to use the default 1️⃣ 2️⃣ 3️⃣.
+  tierEmojis?: [string, string, string];
 }
 
 export const SKILLS: SkillConfig[] = [
-  { name: "Combat",        emoji: "⚔️",  roles: ["Dps",        "Healer",        "Tank"]        },
+  {
+    name: "Combat",
+    emoji: "⚔️",
+    roles: ["DPS", "Healer", "Tank"],
+    // ⚔️ = DPS  |  ⚕️ = Healer  |  🛡️ = Tank
+    // To use custom server emojis replace with e.g. "<:dps:1234567890>"
+    tierEmojis: ["⚔️", "⚕️", "🛡️"],
+  },
   { name: "Magic",         emoji: "🔮",  roles: ["Magic I",         "Magic II",         "Magic III"]         },
   { name: "Archery",       emoji: "🏹",  roles: ["Archery I",       "Archery II",       "Archery III"]       },
   { name: "Alchemy",       emoji: "⚗️",  roles: ["Alchemy I",       "Alchemy II",       "Alchemy III"]       },
@@ -43,3 +56,26 @@ export const SKILLS: SkillConfig[] = [
   { name: "Navigation",    emoji: "🧭",  roles: ["Navigation I",    "Navigation II",    "Navigation III"]    },
   { name: "Healing",       emoji: "💚",  roles: ["Healing I",       "Healing II",       "Healing III"]       },
 ];
+
+// ---------------------------------------------------------------------------
+// Helpers used by the bot — no need to edit below this line
+// ---------------------------------------------------------------------------
+
+/** Returns the tier emojis for a skill (custom or default). */
+export function getTierEmojis(skill: SkillConfig): [string, string, string] {
+  return skill.tierEmojis ?? [TIER_EMOJIS[0], TIER_EMOJIS[1], TIER_EMOJIS[2]];
+}
+
+/**
+ * Converts a Discord reaction emoji to the same string format used in the
+ * config, so standard and custom server emojis both compare correctly.
+ */
+export function reactionEmojiKey(emoji: {
+  name: string | null;
+  id: string | null;
+}): string {
+  // Custom server emoji  →  "<:name:id>"
+  if (emoji.id && emoji.name) return `<:${emoji.name}:${emoji.id}>`;
+  // Standard Unicode emoji  →  the character itself
+  return emoji.name ?? "";
+}
