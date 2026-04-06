@@ -782,6 +782,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     let posted = 0;
     let skipped = 0;
+    let failed = 0;
+    const failedNames: string[] = [];
 
     for (const skill of SKILLS) {
       const existing = getRoleMessage(skill.name, guildId);
@@ -797,18 +799,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         upsertRoleMessage(skill.name, guildId, channel.id, msg.id);
         posted++;
-      } catch (err) {
+      } catch (err: any) {
         console.error(`❌ Failed to post embed for skill "${skill.name}":`, err);
+        failed++;
+        failedNames.push(skill.name);
       }
     }
 
-    await cmd.editReply({
-      content:
-        `✅ Posted **${posted}** skill embed${posted !== 1 ? "s" : ""}` +
-        (skipped > 0
-          ? `. Skipped **${skipped}** already posted — use \`/refresh-roles\` to update them.`
-          : "!"),
-    });
+    const lines: string[] = [];
+    if (posted > 0) lines.push(`✅ Posted **${posted}** skill embed${posted !== 1 ? "s" : ""}`);
+    if (skipped > 0) lines.push(`⏭️ Skipped **${skipped}** already posted — use \`/refresh-roles\` to update them`);
+    if (failed > 0) lines.push(`❌ Failed **${failed}** — bot is missing permissions in this channel.\nFailed skills: ${failedNames.join(", ")}\n\nFix: channel settings → Permissions → give Grand Exchange **View Channel**, **Send Messages**, **Add Reactions**, **Read Message History**`);
+    if (lines.length === 0) lines.push("Nothing to post — all skills already set up.");
+
+    await cmd.editReply({ content: lines.join("\n") });
     return;
   }
 
