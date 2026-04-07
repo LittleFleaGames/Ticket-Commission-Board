@@ -83,6 +83,22 @@ interface PendingDeletion {
 }
 const pendingDeletions = new Map<string, PendingDeletion>(); // threadId → data
 
+// ---------------------------------------------------------------------------
+// Per-(user + message) reaction queue
+// Serializes add/remove events for the same user on the same embed so a quick
+// double-click never races: the remove waits for the add to finish before it
+// checks whether the role is present.
+// ---------------------------------------------------------------------------
+const reactionQueues = new Map<string, Promise<void>>();
+function enqueueReaction(key: string, task: () => Promise<void>): void {
+  const prev = reactionQueues.get(key) ?? Promise.resolve();
+  const next = prev.then(task).catch(console.error);
+  reactionQueues.set(key, next);
+  next.finally(() => {
+    if (reactionQueues.get(key) === next) reactionQueues.delete(key);
+  });
+}
+
 interface PendingForm {
   commissionType: string;
   description: string;
@@ -1547,90 +1563,75 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // ---------------------------------------------------------------------------
 // Reaction role handlers
 // ---------------------------------------------------------------------------
-client.on(Events.MessageReactionAdd, async (reaction, user) => {
+client.on(Events.MessageReactionAdd, (reaction, user) => {
   if (user.bot) return;
+  const queueKey = `${user.id}-${reaction.message.id}`;
+  enqueueReaction(queueKey, async () => {
+    try {
+      if (reaction.partial) await reaction.fetch();
+      if (reaction.message.partial) await reaction.message.fetch();
+    } catch { return; }
 
-  try {
-    if (reaction.partial) await reaction.fetch();
-    if (reaction.message.partial) await reaction.message.fetch();
-  } catch {
-    return;
-  }
+    const guild = reaction.message.guild;
+    if (!guild) return;
 
-  const guild = reaction.message.guild;
-  if (!guild) return;
+    const skillName = getSkillByMessage(reaction.message.id, guild.id);
+    if (!skillName) return;
 
-  // Identify the skill this message belongs to
-  const skillName = getSkillByMessage(reaction.message.id, guild.id);
-  if (!skillName) return;
+    const skill = SKILLS.find((s) => s.name === skillName);
+    if (!skill) return;
 
-  const skill = SKILLS.find((s) => s.name === skillName);
-  if (!skill) return;
+    const emojiKey = reactionEmojiKey(reaction.emoji);
+    const tierEmojis = getTierEmojis(skill);
+    const tierIndex = (tierEmojis as string[]).indexOf(emojiKey);
+    if (tierIndex === -1) return;
 
-  // Match the reaction emoji against this skill's tier emojis
-  const emojiKey = reactionEmojiKey(reaction.emoji);
-  const tierEmojis = getTierEmojis(skill);
-  const tierIndex = (tierEmojis as string[]).indexOf(emojiKey);
-  if (tierIndex === -1) return;
+    let member: import("discord.js").GuildMember;
+    try { member = await guild.members.fetch(user.id); } catch { return; }
 
-  let member: import("discord.js").GuildMember;
-  try {
-    member = await guild.members.fetch(user.id);
-  } catch {
-    return;
-  }
-
-  const chosenRole = guild.roles.cache.find((r) => r.name === skill.roles[tierIndex]);
-  if (chosenRole) {
-    await member.roles.add(chosenRole).catch(console.error);
-  }
-
-  console.log(`🎭 Assigned "${skill.roles[tierIndex]}" to ${user.tag}`);
+    const chosenRole = guild.roles.cache.find((r) => r.name === skill.roles[tierIndex]);
+    if (chosenRole) {
+      await member.roles.add(chosenRole).catch(console.error);
+      console.log(`🎭 Assigned "${skill.roles[tierIndex]}" to ${user.tag}`);
+    }
+  });
 });
 
-client.on(Events.MessageReactionRemove, async (reaction, user) => {
+client.on(Events.MessageReactionRemove, (reaction, user) => {
   if (user.bot) return;
+  // Enqueue behind any in-flight add for the same user+message.
+  // The queue guarantees the remove runs only after the add completes,
+  // so member.roles.cache will always reflect the up-to-date state.
+  const queueKey = `${user.id}-${reaction.message.id}`;
+  enqueueReaction(queueKey, async () => {
+    try {
+      if (reaction.partial) await reaction.fetch();
+      if (reaction.message.partial) await reaction.message.fetch();
+    } catch { return; }
 
-  // Small delay to let any in-flight ReactionAdd finish first.
-  // Without this a quick double-click races: remove fires before add
-  // completes, finds no role yet, exits — then add finishes and role sticks.
-  await new Promise((res) => setTimeout(res, 600));
+    const guild = reaction.message.guild;
+    if (!guild) return;
 
-  try {
-    if (reaction.partial) await reaction.fetch();
-    if (reaction.message.partial) await reaction.message.fetch();
-  } catch {
-    return;
-  }
+    const skillName = getSkillByMessage(reaction.message.id, guild.id);
+    if (!skillName) return;
 
-  const guild = reaction.message.guild;
-  if (!guild) return;
+    const skill = SKILLS.find((s) => s.name === skillName);
+    if (!skill) return;
 
-  // Identify the skill this message belongs to
-  const skillName = getSkillByMessage(reaction.message.id, guild.id);
-  if (!skillName) return;
+    const emojiKey = reactionEmojiKey(reaction.emoji);
+    const tierEmojis = getTierEmojis(skill);
+    const tierIndex = (tierEmojis as string[]).indexOf(emojiKey);
+    if (tierIndex === -1) return;
 
-  const skill = SKILLS.find((s) => s.name === skillName);
-  if (!skill) return;
+    let member: import("discord.js").GuildMember;
+    try { member = await guild.members.fetch(user.id); } catch { return; }
 
-  // Match the reaction emoji against this skill's tier emojis
-  const emojiKey = reactionEmojiKey(reaction.emoji);
-  const tierEmojis = getTierEmojis(skill);
-  const tierIndex = (tierEmojis as string[]).indexOf(emojiKey);
-  if (tierIndex === -1) return;
-
-  let member: import("discord.js").GuildMember;
-  try {
-    member = await guild.members.fetch(user.id);
-  } catch {
-    return;
-  }
-
-  const role = guild.roles.cache.find((r) => r.name === skill.roles[tierIndex]);
-  if (role && member.roles.cache.has(role.id)) {
-    await member.roles.remove(role).catch(console.error);
-    console.log(`🎭 Removed "${skill.roles[tierIndex]}" from ${user.tag}`);
-  }
+    const role = guild.roles.cache.find((r) => r.name === skill.roles[tierIndex]);
+    if (role && member.roles.cache.has(role.id)) {
+      await member.roles.remove(role).catch(console.error);
+      console.log(`🎭 Removed "${skill.roles[tierIndex]}" from ${user.tag}`);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
