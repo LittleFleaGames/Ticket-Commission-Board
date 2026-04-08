@@ -106,6 +106,7 @@ interface PendingForm {
   deadline: string;
 }
 const pendingForms = new Map<string, PendingForm>(); // userId → form data
+const pendingSkillPick = new Map<string, string>(); // userId → chosen skill name (between step 1 and step 2)
 
 const client = new Client({
   intents: [
@@ -1226,12 +1227,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
       deadline: modal.fields.getTextInputValue("deadline"),
     });
 
-    // Ask for profession requirement using Discord's native role selector
-    const roleSelect = new RoleSelectMenuBuilder()
-      .setCustomId(`profession_select_${modal.user.id}`)
-      .setPlaceholder("Search and select a required profession...")
-      .setMinValues(0)
-      .setMaxValues(1);
+    // Step 1 — ask which skill is required (all 17 fit within Discord's 25-option limit)
+    const skillSelect = new StringSelectMenuBuilder()
+      .setCustomId(`profession_skill_${modal.user.id}`)
+      .setPlaceholder("Select a required skill...")
+      .addOptions(
+        SKILLS.map((s) =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(s.name)
+            .setValue(s.name)
+            .setEmoji(s.emoji)
+        )
+      );
 
     const skipButton = new ButtonBuilder()
       .setCustomId(`profession_skip_${modal.user.id}`)
@@ -1241,9 +1248,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await modal.reply({
       content:
         "**Almost done!** Does this quest require a specific profession?\n" +
-        "Pick one from the list below, or skip if anyone can take it.",
+        "**Step 1 of 2** — pick the skill, then you'll choose the level tier.",
       components: [
-        new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(roleSelect),
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(skillSelect),
         new ActionRowBuilder<ButtonBuilder>().addComponents(skipButton),
       ],
       flags: 1 << 6,
@@ -1251,27 +1258,79 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // --- Profession role selected ---
+  // --- Profession step 1: skill chosen → show tier picker ---
   if (
-    interaction.isRoleSelectMenu() &&
-    interaction.customId.startsWith("profession_select_")
+    interaction.isStringSelectMenu() &&
+    interaction.customId.startsWith("profession_skill_")
   ) {
-    const select = interaction as RoleSelectMenuInteraction;
-    const userId = select.customId.replace("profession_select_", "");
-
-    if (select.user.id !== userId) return; // safety check
+    const select = interaction as StringSelectMenuInteraction;
+    const userId = select.customId.replace("profession_skill_", "");
+    if (select.user.id !== userId) return;
 
     const form = pendingForms.get(userId);
     if (!form) {
-      await select.reply({ content: "❌ Session expired. Please run `/commission` again.", flags: 1 << 6 });
+      await select.reply({ content: "❌ Session expired. Please start over.", flags: 1 << 6 });
+      return;
+    }
+
+    const skillName = select.values[0]!;
+    const skill = SKILLS.find((s) => s.name === skillName);
+    if (!skill) return;
+
+    pendingSkillPick.set(userId, skillName);
+
+    const tierSelect = new StringSelectMenuBuilder()
+      .setCustomId(`profession_tier_${userId}`)
+      .setPlaceholder("Select the required level tier...")
+      .addOptions(
+        skill.roles.map((roleName, i) =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(roleName)
+            .setValue(roleName)
+            .setDescription(`Tier ${i + 1}`)
+        )
+      );
+
+    const skipButton = new ButtonBuilder()
+      .setCustomId(`profession_skip_${userId}`)
+      .setLabel("No specific profession required")
+      .setStyle(ButtonStyle.Secondary);
+
+    await select.update({
+      content:
+        `**${skill.emoji} ${skillName} selected!**\n` +
+        "**Step 2 of 2** — now pick the required level tier.",
+      components: [
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(tierSelect),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(skipButton),
+      ],
+    });
+    return;
+  }
+
+  // --- Profession step 2: tier chosen → look up role and post quest ---
+  if (
+    interaction.isStringSelectMenu() &&
+    interaction.customId.startsWith("profession_tier_")
+  ) {
+    const select = interaction as StringSelectMenuInteraction;
+    const userId = select.customId.replace("profession_tier_", "");
+    if (select.user.id !== userId) return;
+
+    const form = pendingForms.get(userId);
+    if (!form) {
+      await select.reply({ content: "❌ Session expired. Please start over.", flags: 1 << 6 });
       return;
     }
     pendingForms.delete(userId);
+    pendingSkillPick.delete(userId);
 
     await select.deferUpdate();
 
-    const selectedRole = select.values.length > 0
-      ? (select.roles.get(select.values[0]) as Role | undefined) ?? null
+    const roleName = select.values[0]!;
+    const guild = select.guild;
+    const selectedRole = guild
+      ? (guild.roles.cache.find((r) => r.name === roleName) ?? null)
       : null;
 
     const threadId = await createQuestThread(
@@ -1312,6 +1371,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
     pendingForms.delete(userId);
+    pendingSkillPick.delete(userId);
 
     await btn.deferUpdate();
 
