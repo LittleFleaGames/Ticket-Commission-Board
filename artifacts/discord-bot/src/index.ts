@@ -56,11 +56,19 @@ import {
   getAllPendingDeletions,
 } from "./db.js";
 import { SKILLS, TIER_EMOJIS, getTierEmojis, reactionEmojiKey } from "./skills.js";
+import {
+  searchItems,
+  getMarketData,
+  capitalize,
+  formatAge,
+  type MarketResult,
+} from "./market.js";
 
 const DISCORD_BOT_TOKEN = process.env["DISCORD_BOT_TOKEN"];
 const FORUM_CHANNEL_ID = process.env["FORUM_CHANNEL_ID"];
 const POST_A_QUEST_CHANNEL_ID = "1486847104457638009";
 const COMMISSION_CATEGORY_ID = "1486848687706738889";
+const MARKET_CHANNEL_ID = "1491466400416530485";
 const DELETE_AFTER_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Reputation point values
@@ -107,6 +115,9 @@ interface PendingForm {
 }
 const pendingForms = new Map<string, PendingForm>(); // userId → form data
 const pendingSkillPick = new Map<string, string>(); // userId → chosen skill name (between step 1 and step 2)
+
+// Market: cached result waiting for "Save to DM" button press
+const pendingMarketResults = new Map<string, MarketResult>(); // userId → last result
 
 interface PendingEdit {
   threadId: string;
@@ -187,6 +198,53 @@ const refreshRolesCommand = new SlashCommandBuilder()
   .setDescription("Edit existing skill embeds with the current config — no repost needed (admin only)")
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
 
+const setupMarketCommand = new SlashCommandBuilder()
+  .setName("setup-market")
+  .setDescription("Post the market search embed in the market channel (admin only)")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
+
+// ---------------------------------------------------------------------------
+// Market embed builder
+// ---------------------------------------------------------------------------
+function buildMarketEmbed(result: MarketResult): EmbedBuilder {
+  const embed = new EmbedBuilder()
+    .setColor(0xf1c40f)
+    .setTitle(`🏪 ${result.itemName}`)
+    .setTimestamp();
+
+  const priceRange =
+    result.globalMin === result.globalMax
+      ? `**${result.globalMin}g**`
+      : `**${result.globalMin}g** – **${result.globalMax}g**`;
+
+  embed.setDescription(
+    `📦 **${result.totalQuantity.toLocaleString()}** available on Sif\n` +
+    `💰 Price range: ${priceRange}`
+  );
+
+  // One field per domain
+  for (const [domain, zones] of result.byDomain) {
+    const lines = zones.map((z) => {
+      const price =
+        z.minPrice === z.maxPrice
+          ? `${z.minPrice}g`
+          : `${z.minPrice}g–${z.maxPrice}g`;
+      return `• **${capitalize(z.zone)}**: ${z.quantity} × ${price}`;
+    });
+    embed.addFields({
+      name: `🗺️ ${capitalize(domain)}`,
+      value: lines.join("\n").slice(0, 1024),
+      inline: false,
+    });
+  }
+
+  embed.setFooter({
+    text: `Data refreshed ${formatAge(result.dataAge)} · paxdei.gaming.tools`,
+  });
+
+  return embed;
+}
+
 // ---------------------------------------------------------------------------
 // Shared embed builder for a single skill
 // ---------------------------------------------------------------------------
@@ -223,6 +281,7 @@ async function registerCommands(guildId: string): Promise<void> {
         leaderboardCommand.toJSON(),
         setupRolesCommand.toJSON(),
         refreshRolesCommand.toJSON(),
+        setupMarketCommand.toJSON(),
       ],
     });
     console.log(`✅ Slash commands registered for guild ${guildId}`);
@@ -1779,6 +1838,206 @@ client.on(Events.InteractionCreate, async (interaction) => {
     });
 
     console.log(`🔄 Quest reopened by ${btn.user.tag} in thread "${thread.name}"`);
+    return;
+  }
+
+  // =========================================================================
+  // MARKET HANDLERS
+  // =========================================================================
+
+  // --- /setup-market → post the persistent search embed in the market channel ---
+  if (interaction.isChatInputCommand() && interaction.commandName === "setup-market") {
+    const cmd = interaction as ChatInputCommandInteraction;
+    await cmd.deferReply({ ephemeral: true });
+
+    try {
+      const channel = await client.channels.fetch(MARKET_CHANNEL_ID) as TextChannel;
+
+      const embed = new EmbedBuilder()
+        .setColor(0xf1c40f)
+        .setTitle("🏪 Grand Exchange — Market Prices")
+        .setDescription(
+          "Search the **Sif (RP)** server market for current item prices and availability.\n\n" +
+          "Click the button below, type an item name, and the bot will show you:\n" +
+          "• Current prices by zone\n" +
+          "• Total quantity available\n" +
+          "• Which domain to travel to\n\n" +
+          "_Market data refreshes hourly. Powered by [paxdei.gaming.tools](https://paxdei.gaming.tools)._"
+        )
+        .setFooter({ text: "Results are private — only you can see them" });
+
+      const searchButton = new ButtonBuilder()
+        .setCustomId("market_search")
+        .setLabel("🔍 Search Market")
+        .setStyle(ButtonStyle.Primary);
+
+      await channel.send({
+        embeds: [embed],
+        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(searchButton)],
+      });
+
+      await cmd.editReply({ content: `✅ Market search embed posted in <#${MARKET_CHANNEL_ID}>` });
+    } catch (err) {
+      console.error("❌ /setup-market failed:", err);
+      await cmd.editReply({ content: "❌ Failed to post market embed. Check bot permissions." });
+    }
+    return;
+  }
+
+  // --- "🔍 Search Market" button → open search modal ---
+  if (interaction.isButton() && interaction.customId === "market_search") {
+    const modal = new ModalBuilder()
+      .setCustomId("market_modal")
+      .setTitle("Search the Market");
+
+    const itemInput = new TextInputBuilder()
+      .setCustomId("item_name")
+      .setLabel("What item are you looking for?")
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder("e.g. Iron Ore, Leather, Shortbow...")
+      .setRequired(true)
+      .setMaxLength(100);
+
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(itemInput)
+    );
+
+    await (interaction as ButtonInteraction).showModal(modal);
+    return;
+  }
+
+  // --- Market modal submitted → search items ---
+  if (interaction.isModalSubmit() && interaction.customId === "market_modal") {
+    const modal = interaction as ModalSubmitInteraction;
+    const query = modal.fields.getTextInputValue("item_name").trim();
+
+    await modal.deferReply({ ephemeral: true });
+
+    try {
+      const matches = await searchItems(query);
+
+      if (matches.length === 0) {
+        await modal.editReply({
+          content: `❌ No items found matching **"${query}"**. Try a different spelling or partial name.`,
+        });
+        return;
+      }
+
+      // Single match → go straight to results
+      if (matches.length === 1) {
+        const match = matches[0]!;
+        await modal.editReply({ content: "⏳ Looking up market data..." });
+
+        const result = await getMarketData(match.id, match.name);
+        if (!result) {
+          await modal.editReply({
+            content: `❌ **${match.name}** is not currently listed on any Sif market stall.`,
+          });
+          return;
+        }
+
+        pendingMarketResults.set(modal.user.id, result);
+
+        const dmButton = new ButtonBuilder()
+          .setCustomId(`market_dm_${modal.user.id}`)
+          .setLabel("📬 Save to DM")
+          .setStyle(ButtonStyle.Secondary);
+
+        await modal.editReply({
+          embeds: [buildMarketEmbed(result)],
+          components: [new ActionRowBuilder<ButtonBuilder>().addComponents(dmButton)],
+        });
+        return;
+      }
+
+      // Multiple matches → show disambiguation select (max 25)
+      // value encodes "itemId|itemName" so we can recover both on selection
+      const select = new StringSelectMenuBuilder()
+        .setCustomId(`market_pick_${modal.user.id}`)
+        .setPlaceholder("Select the exact item...")
+        .addOptions(
+          matches.slice(0, 25).map((m) =>
+            new StringSelectMenuOptionBuilder()
+              .setLabel(m.name)
+              .setValue(`${m.id}|${m.name}`.slice(0, 100))
+          )
+        );
+
+      await modal.editReply({
+        content: `🔍 Found **${matches.length}** items matching **"${query}"** — which one?`,
+        components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)],
+      });
+    } catch (err) {
+      console.error("❌ Market search error:", err);
+      await modal.editReply({ content: "❌ Something went wrong while searching. Please try again." });
+    }
+    return;
+  }
+
+  // --- Disambiguation select → fetch data for chosen item ---
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith("market_pick_")) {
+    const select = interaction as StringSelectMenuInteraction;
+    const userId = select.customId.replace("market_pick_", "");
+    if (select.user.id !== userId) return;
+
+    await select.update({ content: "⏳ Looking up market data...", components: [] });
+
+    try {
+      const raw = select.values[0]!;
+      // value is encoded as "itemId|itemName"
+      const pipeIdx = raw.indexOf("|");
+      const itemId = pipeIdx !== -1 ? raw.slice(0, pipeIdx) : raw;
+      const itemName = pipeIdx !== -1 ? raw.slice(pipeIdx + 1) : raw;
+
+      const result = await getMarketData(itemId, itemName);
+      if (!result) {
+        await select.editReply({
+          content: `❌ **${itemName}** is not currently listed on any Sif market stall.`,
+        });
+        return;
+      }
+
+      pendingMarketResults.set(userId, result);
+
+      const dmButton = new ButtonBuilder()
+        .setCustomId(`market_dm_${userId}`)
+        .setLabel("📬 Save to DM")
+        .setStyle(ButtonStyle.Secondary);
+
+      await select.editReply({
+        content: null,
+        embeds: [buildMarketEmbed(result)],
+        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(dmButton)],
+      });
+    } catch (err) {
+      console.error("❌ Market pick error:", err);
+      await select.editReply({ content: "❌ Something went wrong. Please search again." });
+    }
+    return;
+  }
+
+  // --- "📬 Save to DM" button → send market result to user's DMs ---
+  if (interaction.isButton() && interaction.customId.startsWith("market_dm_")) {
+    const btn = interaction as ButtonInteraction;
+    const userId = btn.customId.replace("market_dm_", "");
+    if (btn.user.id !== userId) return;
+
+    const result = pendingMarketResults.get(userId);
+    if (!result) {
+      await btn.reply({ content: "❌ Result expired — please search again.", ephemeral: true });
+      return;
+    }
+
+    try {
+      const dmChannel = await btn.user.createDM();
+      await dmChannel.send({ embeds: [buildMarketEmbed(result)] });
+      await btn.reply({ content: "📬 Sent to your DMs!", ephemeral: true });
+    } catch {
+      await btn.reply({
+        content: "❌ Couldn't send you a DM. Make sure your DMs are open from server members.",
+        ephemeral: true,
+      });
+    }
     return;
   }
 });
