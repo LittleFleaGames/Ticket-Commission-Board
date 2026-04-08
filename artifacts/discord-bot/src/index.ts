@@ -108,6 +108,12 @@ interface PendingForm {
 const pendingForms = new Map<string, PendingForm>(); // userId → form data
 const pendingSkillPick = new Map<string, string>(); // userId → chosen skill name (between step 1 and step 2)
 
+interface PendingEdit {
+  threadId: string;
+  messageId: string;
+}
+const pendingEdits = new Map<string, PendingEdit>(); // userId → thread+message to update
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -582,6 +588,16 @@ async function createQuestThread(
       .setLabel("✅ Accept Quest")
       .setStyle(ButtonStyle.Success);
 
+    const editButton = new ButtonBuilder()
+      .setCustomId(`edit_quest_${userId}`)
+      .setLabel("✏️ Edit")
+      .setStyle(ButtonStyle.Primary);
+
+    const cancelButton = new ButtonBuilder()
+      .setCustomId(`cancel_quest_${userId}`)
+      .setLabel("❌ Cancel")
+      .setStyle(ButtonStyle.Danger);
+
     const professionLine = professionRole
       ? `**🎓 Profession Required:** <@&${professionRole.id}> · `
       : "";
@@ -596,7 +612,7 @@ async function createQuestThread(
       message: {
         content: previewText,
         embeds: [embed],
-        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(acceptButton)],
+        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(acceptButton, editButton, cancelButton)],
       },
     });
 
@@ -1394,6 +1410,153 @@ client.on(Events.InteractionCreate, async (interaction) => {
         components: [],
       });
     }
+    return;
+  }
+
+  // --- Edit Quest button → show pre-filled modal ---
+  if (interaction.isButton() && interaction.customId.startsWith("edit_quest_")) {
+    const btn = interaction as ButtonInteraction;
+    const requesterId = btn.customId.replace("edit_quest_", "");
+
+    if (btn.user.id !== requesterId) {
+      await btn.reply({ content: "❌ Only the quest poster can edit this.", flags: 1 << 6 });
+      return;
+    }
+
+    const thread = btn.channel as ThreadChannel;
+    if (thread.name.startsWith("[ACCEPTED]")) {
+      await btn.reply({ content: "❌ This quest has already been accepted and cannot be edited.", flags: 1 << 6 });
+      return;
+    }
+
+    // Read current values from the embed so the modal is pre-filled
+    const embed = btn.message.embeds[0];
+    const currentType    = embed?.fields.find((f) => f.name.includes("Quest Type"))?.value    ?? "";
+    const currentBudget  = embed?.fields.find((f) => f.name.includes("Budget"))?.value        ?? "";
+    const currentDead    = embed?.fields.find((f) => f.name.includes("Deadline"))?.value      ?? "";
+    const currentDesc    = embed?.fields.find((f) => f.name.includes("Description"))?.value   ?? "";
+
+    pendingEdits.set(requesterId, { threadId: btn.channelId, messageId: btn.message.id });
+
+    const editModal = new ModalBuilder()
+      .setCustomId(`edit_quest_modal_${requesterId}`)
+      .setTitle("Edit Quest");
+
+    editModal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder().setCustomId("commission_type")
+          .setLabel("Quest type").setStyle(TextInputStyle.Short)
+          .setValue(currentType).setRequired(true).setMaxLength(100)
+      ),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder().setCustomId("description")
+          .setLabel("Description").setStyle(TextInputStyle.Paragraph)
+          .setValue(currentDesc).setRequired(true).setMaxLength(1000)
+      ),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder().setCustomId("budget")
+          .setLabel("Budget").setStyle(TextInputStyle.Short)
+          .setValue(currentBudget).setRequired(true).setMaxLength(100)
+      ),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder().setCustomId("deadline")
+          .setLabel("Deadline / timeline").setStyle(TextInputStyle.Short)
+          .setValue(currentDead).setRequired(true).setMaxLength(100)
+      ),
+    );
+
+    await btn.showModal(editModal);
+    return;
+  }
+
+  // --- Edit Quest modal submission → update embed and thread title ---
+  if (interaction.isModalSubmit() && interaction.customId.startsWith("edit_quest_modal_")) {
+    const modal = interaction as ModalSubmitInteraction;
+    const requesterId = modal.customId.replace("edit_quest_modal_", "");
+
+    if (modal.user.id !== requesterId) return;
+
+    const pending = pendingEdits.get(requesterId);
+    if (!pending) {
+      await modal.reply({ content: "❌ Session expired. Please click Edit again.", flags: 1 << 6 });
+      return;
+    }
+    pendingEdits.delete(requesterId);
+
+    const newType     = modal.fields.getTextInputValue("commission_type");
+    const newDesc     = modal.fields.getTextInputValue("description");
+    const newBudget   = modal.fields.getTextInputValue("budget");
+    const newDeadline = modal.fields.getTextInputValue("deadline");
+
+    await modal.deferReply({ ephemeral: true });
+
+    try {
+      const guild = modal.guild;
+      if (!guild) throw new Error("No guild");
+
+      const channel = await guild.channels.fetch(pending.threadId);
+      const thread = channel as ThreadChannel;
+      const message = await thread.messages.fetch(pending.messageId);
+
+      // Preserve the profession field if it existed
+      const oldEmbed = message.embeds[0];
+      const professionField = oldEmbed?.fields.find((f) => f.name.includes("Profession"));
+
+      const updatedEmbed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle("📋 Quest Request")
+        .setAuthor({ name: modal.user.username, iconURL: modal.user.displayAvatarURL() })
+        .addFields(
+          { name: "⚔️ Quest Type",  value: newType,     inline: true },
+          { name: "💰 Budget",       value: newBudget,   inline: true },
+          { name: "⏰ Deadline",     value: newDeadline, inline: true },
+          { name: "📝 Description",  value: newDesc,     inline: false },
+        )
+        .setTimestamp()
+        .setFooter({ text: "Click Accept below to take this quest · ✏️ Edited" });
+
+      if (professionField) updatedEmbed.addFields(professionField);
+
+      // Rebuild preview text and keep buttons intact
+      const previewText =
+        `**⚔️ Quest Type:** ${newType}\n` +
+        `**📝 What's needed:** ${newDesc}\n` +
+        `**💰 Budget:** ${newBudget} · **⏰ Deadline:** ${newDeadline}`;
+
+      await message.edit({ content: previewText, embeds: [updatedEmbed] });
+
+      // Update thread title to reflect the new quest type
+      const newTitle = `[${newType}] — ${modal.user.username}`.slice(0, 100);
+      if (thread.name !== newTitle) await thread.setName(newTitle).catch(() => {});
+
+      await modal.editReply({ content: "✅ Quest updated successfully!" });
+    } catch (err) {
+      console.error("❌ Failed to edit quest:", err);
+      await modal.editReply({ content: "❌ Something went wrong while updating the quest." });
+    }
+    return;
+  }
+
+  // --- Cancel Quest button → delete the forum thread ---
+  if (interaction.isButton() && interaction.customId.startsWith("cancel_quest_")) {
+    const btn = interaction as ButtonInteraction;
+    const requesterId = btn.customId.replace("cancel_quest_", "");
+
+    if (btn.user.id !== requesterId) {
+      await btn.reply({ content: "❌ Only the quest poster can cancel this.", flags: 1 << 6 });
+      return;
+    }
+
+    const thread = btn.channel as ThreadChannel;
+    if (thread.name.startsWith("[ACCEPTED]")) {
+      await btn.reply({ content: "❌ This quest has already been accepted and cannot be cancelled.", flags: 1 << 6 });
+      return;
+    }
+
+    await btn.reply({ content: "🗑️ Cancelling quest...", flags: 1 << 6 });
+    setTimeout(async () => {
+      try { await thread.delete("Quest cancelled by requester"); } catch { /* already gone */ }
+    }, 1_500);
     return;
   }
 
