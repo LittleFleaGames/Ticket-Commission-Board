@@ -1,0 +1,82 @@
+[9:50:45 AM]Server marked as offline
+[9:50:48 AM][Wispbyte]: Checking server disk space usage, this could take a few seconds...
+[9:50:48 AM][Wispbyte]: Updating process configuration files...
+[9:50:48 AM][Wispbyte]: Ensuring file permissions are set correctly, this could take a few seconds...
+[9:50:48 AM]Server marked as starting
+[9:50:48 AM][Wispbyte]: Pulling Docker container image, this could take a few minutes to complete...
+[9:50:55 AM][Wispbyte]: Finished pulling Docker container image
+[9:50:56 AM]v19.9.0
+[9:50:56 AM]Server marked as running
+[9:50:56 AM]:/home/container$ if [[ -d .git ]] && [[ ${AUTO_UPDATE} == "1" ]]; then git pull; fi; if [[ ! -z ${NODE_PACKAGES} ]]; then /usr/local/bin/npm install ${NODE_PACKAGES}; fi; if [[ ! -z ${UNNODE_PACKAGES} ]]; then /usr/local/bin/npm uninstall ${UNNODE_PACKAGES}; fi; if [ -f /home/container/package.json ]; then /usr/local/bin/npm install; fi; /usr/local/bin/node /home/container/${JS_FILE}
+[9:50:58 AM]25l[..................] | idealTree: sill logfile done cleaning log files
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps 25hnpm ERR! code EUNSUPPORTEDPROTOCOL
+[9:50:58 AM]npm ERR! Unsupported URL Type "catalog:": catalog:
+[9:50:58 AM]
+[9:50:58 AM]npm ERR! A complete log of this run can be found in: /home/container/.npm/_logs/2026-05-01T13_50_56_898Z-debug-0.log
+[9:50:58 AM]node:internal/modules/cjs/loader:1093
+[9:50:58 AM]throw err;
+[9:50:58 AM]^
+[9:50:58 AM]Error: Cannot find module '/home/container/index.js'
+[9:50:58 AM] at Module._resolveFilename (node:internal/modules/cjs/loader:1090:15)
+[9:50:58 AM] at Module._load (node:internal/modules/cjs/loader:934:27)
+[9:50:58 AM] at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:83:12)
+[9:50:58 AM] at node:internal/main/run_main_module:23:47 {
+[9:50:58 AM]code: 'MODULE_NOT_FOUND',
+[9:50:58 AM]requireStack: []
+[9:50:58 AM]}
+[9:50:58 AM]Node.js v19.9.0
+[9:50:58 AM]Server marked as offline
+[9:50:59 AM][Wispbyte]: ---------- Detected server process in a crashed state! ----------
+[9:50:59 AM][Wispbyte]: Exit code: 1
+[9:50:59 AM][Wispbyte]: Out of memory: false
+[9:50:59 AM][Wispbyte]: Checking server disk space usage, this could take a few seconds...
+[9:50:59 AM][Wispbyte]: Updating process configuration files...
+[9:50:59 AM][Wispbyte]: Ensuring file permissions are set correctly, this could take a few seconds...
+[9:50:59 AM]Server marked as starting
+[9:50:59 AM][Wispbyte]: Pulling Docker container image, this could take a few minutes to complete...
+[9:51:01 AM][Wispbyte]: Finished pulling Docker container image
+[9:51:02 AM]v19.9.0
+[9:51:02 AM]Server marked as running
+[9:51:02 AM]:/home/container$ if [[ -d .git ]] && [[ ${AUTO_UPDATE} == "1" ]]; then git pull; fi; if [[ ! -z ${NODE_PACKAGES} ]]; then /usr/local/bin/npm install ${NODE_PACKAGES}; fi; if [[ ! -z ${UNNODE_PACKAGES} ]]; then /usr/local/bin/npm uninstall ${UNNODE_PACKAGES}; fi; if [ -f /home/container/package.json ]; then /usr/local/bin/npm install; fi; /usr/local/bin/node /home/container/${JS_FILE}
+[9:51:05 AM]25l[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps 25hnpm ERR! code EUNSUPPORTEDPROTOCOL
+[9:51:05 AM]npm ERR! Unsupported URL Type "catalog:": catalog:
+[9:51:05 AM]
+[9:51:05 AM]npm ERR! A complete log of this run can be found in: /home/container/.npm/_logs/2026-05-01T13_51_03_698Z-debug-0.log
+[9:51:05 AM]node:internal/modules/cjs/loader:1093
+[9:51:05 AM]throw err;
+[9:51:05 AM]^
+[9:51:05 AM]Error: Cannot find module '/home/container/index.js'
+[9:51:05 AM] at Module._resolveFilename (node:internal/modules/cjs/loader:1090:15)
+[9:51:05 AM] at Module._load (node:internal/modules/cjs/loader:934:27)
+[9:51:05 AM] at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:83:12)
+[9:51:05 AM] at node:internal/main/run_main_module:23:47 {
+[9:51:05 AM]code: 'MODULE_NOT_FOUND',
+[9:51:05 AM]requireStack: []
+[9:51:05 AM]}
+[9:51:05 AM]Node.js v19.9.0
+[9:51:05 AM]Server marked as offline
+[9:51:05 AM][Wispbyte]: ---------- Detected server process in a crashed state! ----------
+[9:51:05 AM][Wispbyte]: Exit code: 1
+[9:51:05 AM][Wispbyte]: Out of memory: false
+[9:51:05 AM][Wispbyte]: Aborting automatic restart, last crash occurred less than 60 seconds ago.
