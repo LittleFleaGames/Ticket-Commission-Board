@@ -47,6 +47,7 @@ import {
   addStepParticipants,
   getStepParticipants,
   addReputation,
+  setReputation,
   getReputation,
   getLeaderboard,
   upsertRoleMessage,
@@ -204,6 +205,26 @@ const setupMarketCommand = new SlashCommandBuilder()
   .setDescription("Post the market search embed in the market channel (admin only)")
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
 
+const adminRepCommand = new SlashCommandBuilder()
+  .setName("admin-rep")
+  .setDescription("Manually set or add reputation points for a member (admin only)")
+  .addUserOption((o) =>
+    o.setName("user").setDescription("The member to update").setRequired(true)
+  )
+  .addStringOption((o) =>
+    o.setName("action")
+      .setDescription("Add points on top of current total, or set to an exact value")
+      .setRequired(true)
+      .addChoices(
+        { name: "add", value: "add" },
+        { name: "set", value: "set" }
+      )
+  )
+  .addIntegerOption((o) =>
+    o.setName("points").setDescription("Number of points").setRequired(true).setMinValue(0)
+  )
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator.toString());
+
 // ---------------------------------------------------------------------------
 // Market embed builder
 // ---------------------------------------------------------------------------
@@ -283,6 +304,7 @@ async function registerCommands(guildId: string): Promise<void> {
         setupRolesCommand.toJSON(),
         refreshRolesCommand.toJSON(),
         setupMarketCommand.toJSON(),
+        adminRepCommand.toJSON(),
       ],
     });
     console.log(`✅ Slash commands registered for guild ${guildId}`);
@@ -913,6 +935,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     await cmd.reply({ embeds: [embed] });
+    return;
+  }
+
+  // --- /admin-rep → manually set or add reputation (admin only) ---
+  if (interaction.isChatInputCommand() && interaction.commandName === "admin-rep") {
+    const cmd = interaction as ChatInputCommandInteraction;
+    const guildId = cmd.guildId;
+    if (!guildId) return;
+
+    const target = cmd.options.getUser("user", true);
+    const action = cmd.options.getString("action", true) as "add" | "set";
+    const points = cmd.options.getInteger("points", true);
+
+    if (action === "set") {
+      await setReputation(target.id, guildId, target.username, points);
+    } else {
+      await addReputation(target.id, guildId, target.username, points);
+    }
+
+    const updated = await getReputation(target.id, guildId);
+    const newTotal = updated?.points ?? points;
+
+    const embed = new EmbedBuilder()
+      .setColor(0x57f287)
+      .setTitle("⭐ Reputation Updated")
+      .setDescription(
+        `**${target.username}**'s reputation has been ${action === "set" ? "set to" : "increased by"} **${points} point${points !== 1 ? "s" : ""}**.\n` +
+        `New total: **${newTotal} point${newTotal !== 1 ? "s" : ""}**.`
+      )
+      .setFooter({ text: `Updated by ${cmd.user.username}` });
+
+    await cmd.reply({ embeds: [embed], flags: 1 << 6 });
     return;
   }
 

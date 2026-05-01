@@ -255,6 +255,22 @@ export async function addReputation(
   );
 }
 
+export async function setReputation(
+  userId: string,
+  guildId: string,
+  username: string,
+  points: number
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO reputation (user_id, guild_id, username, points)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id, guild_id) DO UPDATE SET
+       points   = excluded.points,
+       username = excluded.username`,
+    [userId, guildId, username, points]
+  );
+}
+
 export async function getReputation(
   userId: string,
   guildId: string
