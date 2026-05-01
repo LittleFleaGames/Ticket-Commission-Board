@@ -50,15 +50,25 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 
 ## Discord Bot
 
-The `artifacts/discord-bot` package runs a Discord bot that:
-- Watches `TICKET_SOURCE_CHANNEL_ID` for messages from Ticket Tool bot
-- Parses embed fields (Q&A from the user's ticket submission)
-- Creates a forum thread in `FORUM_CHANNEL_ID` with all the ticket details
-- Attaches an "Accept Commission" button — when clicked, it disables itself, posts an accepted notice, and renames the thread with `[ACCEPTED]` prefix
+The `artifacts/discord-bot` package runs a Discord bot (Grand Exchange#8144) for a Pax Dei RPG server (Sif RP). Deployed on Wispbyte (Node.js) with Neon PostgreSQL.
 
-Run with: `pnpm --filter @workspace/discord-bot run dev`
+Features:
+- Quest/commission posting from Ticket Tool bot → forum threads with Accept/Edit/Cancel buttons
+- Two-step profession picker for new posts
+- Private channels per commission
+- Reputation system with `/rep` and `/leaderboard`
+- Reaction-based skill role picker (`/setup-roles`) — 17 skills × 3 tiers
+- Pax Dei market price lookup via gaming.tools CDN API (`/setup-market`, search UI with ephemeral results)
+- World challenge tracker (`/challenge`) with progress embed, step clearing, and participant tracking
+- Auto-deletion of accepted commission threads after 24 hours (survives restarts via DB)
 
-Required secrets: `DISCORD_BOT_TOKEN`, `FORUM_CHANNEL_ID`, `TICKET_SOURCE_CHANNEL_ID`
+Database: `src/db.ts` — PostgreSQL via `pg` Pool, all async. `DATABASE_URL` env var required (Neon connection string). Tables auto-created on startup via `dbReady` promise.
+
+Run with: `pnpm --filter @workspace/discord-bot run dev` (start command on Wispbyte: `tsx src/index.ts`)
+
+Required secrets: `DISCORD_BOT_TOKEN`, `FORUM_CHANNEL_ID`, `TICKET_SOURCE_CHANNEL_ID`, `DATABASE_URL` (Neon)
+
+IMPORTANT: The Replit workflow for this bot must stay stopped — Railway is the active instance being migrated to Wispbyte.
 
 ## Packages
 

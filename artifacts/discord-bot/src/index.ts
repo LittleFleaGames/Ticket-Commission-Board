@@ -33,6 +33,7 @@ import {
   Message,
 } from "discord.js";
 import {
+  dbReady,
   createChallenge,
   createStep,
   getChallengeByChannel,
@@ -293,27 +294,31 @@ async function registerCommands(guildId: string): Promise<void> {
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`✅ Bot ready! Logged in as ${readyClient.user.tag}`);
   console.log(`🗂️  Forum channel: ${FORUM_CHANNEL_ID}`);
+
+  // Wait for DB tables to be created before doing anything
+  await dbReady;
+
   for (const guild of readyClient.guilds.cache.values()) {
     await registerCommands(guild.id);
   }
 
   // Re-schedule deadline checks for all active challenges that survived a restart
-  const active = getAllActiveChallenges();
+  const active = await getAllActiveChallenges();
   for (const c of active) {
     scheduleDeadlineCheck(c.id, c.deadline_ts);
     console.log(`⏰ Re-scheduled deadline for challenge "${c.name}" (${c.id})`);
   }
 
   // Restore pending thread deletions that survived a restart
-  const pendingRows = getAllPendingDeletions();
+  const pendingRows = await getAllPendingDeletions();
   for (const row of pendingRows) {
     try {
       const guild = readyClient.guilds.cache.get(row.guild_id);
-      if (!guild) { cancelPendingDeletion(row.thread_id); continue; }
+      if (!guild) { cancelPendingDeletion(row.thread_id).catch(console.error); continue; }
       const channel = await guild.channels.fetch(row.thread_id).catch(() => null);
       if (!channel) {
         // Thread is already gone — clean up DB entry
-        cancelPendingDeletion(row.thread_id);
+        await cancelPendingDeletion(row.thread_id);
         console.log(`🗑️ Thread ${row.thread_id} already deleted — cleared from DB`);
         continue;
       }
@@ -325,7 +330,7 @@ client.once(Events.ClientReady, async (readyClient) => {
       );
     } catch (err) {
       console.error(`❌ Failed to restore deletion for thread ${row.thread_id}:`, err);
-      cancelPendingDeletion(row.thread_id);
+      cancelPendingDeletion(row.thread_id).catch(console.error);
     }
   }
   console.log(`🔄 Restored ${pendingRows.length} pending deletion(s) from DB`);
@@ -361,11 +366,11 @@ function isLeader(
 // ---------------------------------------------------------------------------
 // Build the challenge embed + action row (can be called to refresh it)
 // ---------------------------------------------------------------------------
-function buildChallengeEmbed(
+async function buildChallengeEmbed(
   challengeId: string
-): { embed: EmbedBuilder; row: ActionRowBuilder<ButtonBuilder> } {
-  const challenge = getChallengeById(challengeId)!;
-  const steps = getSteps(challengeId);
+): Promise<{ embed: EmbedBuilder; row: ActionRowBuilder<ButtonBuilder> }> {
+  const challenge = (await getChallengeById(challengeId))!;
+  const steps = await getSteps(challengeId);
 
   const cleared = steps.filter((s) => s.cleared).length;
   const total = steps.length;
@@ -381,7 +386,7 @@ function buildChallengeEmbed(
 
   for (const step of steps) {
     if (step.cleared) {
-      const participants = getStepParticipants(step.id);
+      const participants = await getStepParticipants(step.id);
       const count = participants.length;
       const clearedTs = Math.floor((step.cleared_at ?? 0) / 1000);
       description += `✅ **${step.name}** · ${count} adventurer${count !== 1 ? "s" : ""} · <t:${clearedTs}:d>\n`;
@@ -422,14 +427,14 @@ function scheduleDeadlineCheck(
   if (delay <= 0) return; // already passed
 
   setTimeout(async () => {
-    const challenge = getChallengeById(challengeId);
+    const challenge = await getChallengeById(challengeId);
     if (!challenge || challenge.completed) return;
 
-    const steps = getSteps(challengeId);
+    const steps = await getSteps(challengeId);
     const cleared = steps.filter((s) => s.cleared).length;
     if (cleared === steps.length) return; // completed just in time
 
-    markChallengeCompleted(challengeId);
+    await markChallengeCompleted(challengeId);
 
     try {
       const channel = await client.channels.fetch(challenge.channel_id);
@@ -576,19 +581,19 @@ function scheduleDeletion(
   const resolvedDeleteAt = deleteAt ?? now + DELETE_AFTER_MS;
   const delay = Math.max(0, resolvedDeleteAt - now);
 
-  // Persist so the timer survives restarts
+  // Persist so the timer survives restarts (fire-and-forget)
   upsertPendingDeletion(
     thread.id,
     thread.guildId,
     requesterId,
     privateChannelId,
     resolvedDeleteAt
-  );
+  ).catch(console.error);
 
   const timeout = setTimeout(async () => {
     try {
       pendingDeletions.delete(thread.id);
-      cancelPendingDeletion(thread.id);
+      await cancelPendingDeletion(thread.id);
       await thread.delete("Auto-deleted 24 hours after quest acceptance");
       console.log(`🗑️ Auto-deleted thread: ${thread.id}`);
     } catch (err) {
@@ -787,7 +792,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     await cmd.deferReply({ flags: 1 << 6 });
 
-    const existing = getChallengeByChannel(cmd.channelId);
+    const existing = await getChallengeByChannel(cmd.channelId);
     if (existing && !existing.completed) {
       await cmd.editReply({
         content: "❌ This channel already has an active challenge. Create a new channel for another one.",
@@ -822,7 +827,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     const challengeId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    createChallenge(
+    await createChallenge(
       challengeId,
       guild.id,
       cmd.channelId,
@@ -833,10 +838,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     for (let i = 0; i < stepNames.length; i++) {
       const stepId = `${challengeId}-${i}`;
-      createStep(stepId, challengeId, stepNames[i]!, i);
+      await createStep(stepId, challengeId, stepNames[i]!, i);
     }
 
-    const { embed, row } = buildChallengeEmbed(challengeId);
+    const { embed, row } = await buildChallengeEmbed(challengeId);
 
     // Post the challenge embed in the channel
     const channel = cmd.channel as TextChannel;
@@ -847,7 +852,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await msg.pin();
     } catch { /* not critical */ }
 
-    updateChallengeMessageId(challengeId, msg.id);
+    await updateChallengeMessageId(challengeId, msg.id);
     scheduleDeadlineCheck(challengeId, deadlineDate.getTime());
 
     await cmd.editReply({
@@ -867,7 +872,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const guildId = cmd.guildId;
     if (!guildId) return;
 
-    const rep = getReputation(target.id, guildId);
+    const rep = await getReputation(target.id, guildId);
     const points = rep?.points ?? 0;
     const isSelf = target.id === cmd.user.id;
 
@@ -890,7 +895,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const guildId = cmd.guildId;
     if (!guildId) return;
 
-    const top = getLeaderboard(guildId, 10);
+    const top = await getLeaderboard(guildId, 10);
 
     const embed = new EmbedBuilder()
       .setColor(0xf1c40f)
@@ -926,7 +931,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const failedNames: string[] = [];
 
     for (const skill of SKILLS) {
-      const existing = getRoleMessage(skill.name, guildId);
+      const existing = await getRoleMessage(skill.name, guildId);
       if (existing) {
         skipped++;
         continue;
@@ -937,7 +942,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         for (const emoji of getTierEmojis(skill)) {
           await msg.react(emoji);
         }
-        upsertRoleMessage(skill.name, guildId, channel.id, msg.id);
+        await upsertRoleMessage(skill.name, guildId, channel.id, msg.id);
         posted++;
       } catch (err: any) {
         console.error(`❌ Failed to post embed for skill "${skill.name}":`, err);
@@ -969,7 +974,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     let notFound = 0;
 
     for (const skill of SKILLS) {
-      const record = getRoleMessage(skill.name, guildId);
+      const record = await getRoleMessage(skill.name, guildId);
       if (!record) {
         notFound++;
         continue;
@@ -1017,7 +1022,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     const challengeId = btn.customId.replace("report_clear_", "");
-    const steps = getSteps(challengeId);
+    const steps = await getSteps(challengeId);
     const unclearedSteps = steps.filter((s) => !s.cleared);
 
     if (unclearedSteps.length === 0) {
@@ -1052,7 +1057,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const select = interaction as StringSelectMenuInteraction;
     const challengeId = select.customId.replace("step_select_", "");
     const stepId = select.values[0]!;
-    const step = getStepById(stepId);
+    const step = await getStepById(stepId);
     if (!step) {
       await select.reply({ content: "❌ Step not found.", flags: 1 << 6 });
       return;
@@ -1091,8 +1096,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const guild = select.guild;
     if (!guild || !challengeId || !stepId) return;
 
-    const challenge = getChallengeById(challengeId);
-    const step = getStepById(stepId);
+    const challenge = await getChallengeById(challengeId);
+    const step = await getStepById(stepId);
     if (!challenge || !step) {
       await select.update({ content: "❌ Challenge or step not found.", components: [] });
       return;
@@ -1104,24 +1109,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     // Record the clear
-    dbClearStep(stepId, select.user.id, select.user.username);
+    await dbClearStep(stepId, select.user.id, select.user.username);
 
     const participants = select.users.map((u) => ({
       userId: u.id,
       username: u.username,
     }));
-    addStepParticipants(stepId, participants);
+    await addStepParticipants(stepId, participants);
 
     // Award rep to each participant
     for (const p of participants) {
-      addReputation(p.userId, guild.id, p.username, REP_DUNGEON_CLEAR);
+      await addReputation(p.userId, guild.id, p.username, REP_DUNGEON_CLEAR);
     }
 
-    const steps = getSteps(challengeId);
+    const steps = await getSteps(challengeId);
     const clearedCount = steps.filter((s) => s.cleared).length;
     const allDone = clearedCount === steps.length;
 
-    if (allDone) markChallengeCompleted(challengeId);
+    if (allDone) await markChallengeCompleted(challengeId);
 
     // Refresh the sticky embed
     if (challenge.message_id) {
@@ -1131,7 +1136,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const msg = await (channel as TextChannel).messages.fetch(
             challenge.message_id
           );
-          const { embed, row } = buildChallengeEmbed(challengeId);
+          const { embed, row } = await buildChallengeEmbed(challengeId);
           await msg.edit({ embeds: [embed], components: [row] });
         }
       } catch (err) {
@@ -1692,7 +1697,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } catch { /* not critical */ }
 
     // Award reputation to the acceptor
-    addReputation(acceptorId, guild.id, btn.user.username, REP_QUEST_ACCEPT);
+    await addReputation(acceptorId, guild.id, btn.user.username, REP_QUEST_ACCEPT);
     console.log(`⭐ +${REP_QUEST_ACCEPT} rep awarded to ${btn.user.tag}`);
     console.log(`✅ Quest accepted by ${btn.user.tag} in thread "${thread.name}"`);
     return;
@@ -2057,7 +2062,7 @@ client.on(Events.MessageReactionAdd, (reaction, user) => {
     const guild = reaction.message.guild;
     if (!guild) return;
 
-    const skillName = getSkillByMessage(reaction.message.id, guild.id);
+    const skillName = await getSkillByMessage(reaction.message.id, guild.id);
     if (!skillName) return;
 
     const skill = SKILLS.find((s) => s.name === skillName);
@@ -2094,7 +2099,7 @@ client.on(Events.MessageReactionRemove, (reaction, user) => {
     const guild = reaction.message.guild;
     if (!guild) return;
 
-    const skillName = getSkillByMessage(reaction.message.id, guild.id);
+    const skillName = await getSkillByMessage(reaction.message.id, guild.id);
     if (!skillName) return;
 
     const skill = SKILLS.find((s) => s.name === skillName);
