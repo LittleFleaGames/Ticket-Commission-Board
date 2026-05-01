@@ -1,0 +1,395 @@
+[12:35:36 PM]Server marked as offline
+[12:35:41 PM][Wispbyte]: Checking server disk space usage, this could take a few seconds...
+[12:35:41 PM][Wispbyte]: Updating process configuration files...
+[12:35:41 PM][Wispbyte]: Ensuring file permissions are set correctly, this could take a few seconds...
+[12:35:41 PM]Server marked as starting
+[12:35:41 PM][Wispbyte]: Pulling Docker container image, this could take a few minutes to complete...
+[12:35:43 PM][Wispbyte]: Finished pulling Docker container image
+[12:35:44 PM]v19.9.0
+[12:35:44 PM]Server marked as running
+[12:35:44 PM]:/home/container$ if [[ -d .git ]] && [[ ${AUTO_UPDATE} == "1" ]]; then git pull; fi; if [[ ! -z ${NODE_PACKAGES} ]]; then /usr/local/bin/npm install ${NODE_PACKAGES}; fi; if [[ ! -z ${UNNODE_PACKAGES} ]]; then /usr/local/bin/npm uninstall ${UNNODE_PACKAGES}; fi; if [ -f /home/container/package.json ]; then /usr/local/bin/npm install; fi; /usr/local/bin/node /home/container/${JS_FILE}
+[12:36:07 PM]25l[..................] | idealTree: sill logfile done cleaning log files
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] / idealTree:container: sill idealTree buildDeps
+[..................] / idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] / idealTree:container: sill idealTree buildDeps
+[..................] / idealTree:container: sill idealTree buildDeps
+[..................] / idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] / idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[..................] \ idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] | idealTree:container: sill idealTree buildDeps
+[..................] - idealTree:container: sill idealTree buildDeps
+[#########.........] - idealTree:container: timing idealTree:#root Completed in
+[#########.........] - idealTree:container: timing idealTree:#root Completed in
+[#########.........] - idealTree:container: timing idealTree:#root Completed in
+[#########.........] | idealTree:container: timing idealTree:#root Completed in
+[#########.........] | idealTree:container: timing idealTree:#root Completed in
+[#########.........] | idealTree:container: timing idealTree:#root Completed in
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] / idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] - idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] - idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] \ idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] | idealTree:@discordjs/rest: sill placeDep ROOT @sapphire/
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] / idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] / idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] | idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree:@discordjs/rest: timing idealTree:node_modules
+[#########.........] \ idealTree: timing idealTree Completed in 10341ms
+[############......] | reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] \ reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] | reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] | reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] / reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] / reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] / reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] / reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] / reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] / reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] / reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] / reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[############......] / reify:fsevents: timing reifyNode:node_modules/@esbuild/a
+[#############.....] \ reify:postgres-bytea: http fetch GET 200 https://registr
+[#############.....] / reify:pg-connection-string: http fetch GET 200 https://r
+[#############.....] - reify:pgpass: http fetch GET 200 https://registry.npmjs.
+[##############....] \ reify:fast-deep-equal: http fetch GET 200 https://regist
+[##############....] - reify:lodash.snakecase: http fetch GET 200 https://regis
+[##############....] \ reify:lodash.snakecase: http fetch GET 200 https://regis
+[##############....] | reify:@discordjs/util: http fetch GET 200 https://regist
+[##############....] \ reify:pg-types: http fetch GET 200 https://registry.npmj
+[###############...] / reify:@sapphire/async-queue: timing reifyNode:node_modul
+[###############...] \ reify:dotenv: timing reifyNode:node_modules/magic-bytes.
+[###############...] / reify:@sapphire/snowflake: http fetch GET 200 https://re
+[###############...] / reify:@sapphire/snowflake: http fetch GET 200 https://re
+[################..] / reify:@discordjs/collection: timing reifyNode:node_modul
+[################..] / reify:pg: timing reifyNode:node_modules/@discordjs/forma
+[################..] - reify:pg: timing reifyNode:node_modules/@discordjs/forma
+[################..] - reify:@discordjs/collection: http fetch GET 200 https://
+[################..] \ reify:@discordjs/collection: http fetch GET 200 https://
+[################..] - reify:undici-types: http fetch GET 200 https://registry.
+[################..] \ reify:@discordjs/ws: timing reifyNode:node_modules/undic
+[################..] \ reify:@discordjs/ws: timing reifyNode:node_modules/undic
+[################..] \ reify:@discordjs/ws: timing reifyNode:node_modules/undic
+[################..] \ reify:@discordjs/ws: timing reifyNode:node_modules/undic
+[#################.] / reify:pg-protocol: http fetch GET 200 https://registry.n
+[#################.] - reify:pg-protocol: http fetch GET 200 https://registry.n
+[#################.] \ reify:@discordjs/rest: http fetch GET 200 https://regist
+[#################.] / reify:tsx: http fetch GET 200 https://registry.npmjs.org
+[#################.] / reify:tsx: http fetch GET 200 https://registry.npmjs.org
+[#################.] \ reify:@vladfrangu/async_event_emitter: http fetch GET 20
+[#################.] / reify:@sapphire/shapeshift: http fetch GET 200 https://r
+[#################.] / reify:@sapphire/shapeshift: http fetch GET 200 https://r
+[#################.] / reify:@sapphire/shapeshift: http fetch GET 200 https://r
+[#################.] / reify:@sapphire/shapeshift: http fetch GET 200 https://r
+[#################.] / reify:@sapphire/shapeshift: http fetch GET 200 https://r
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] \ reify:@discordjs/builders: http fetch GET 200 https://re
+[#################.] / reify:@types/node: http fetch GET 200 https://registry.n
+[#################.] / reify:@types/node: http fetch GET 200 https://registry.n
+[#################.] / reify:@types/node: http fetch GET 200 https://registry.n
+[#################.] / reify:@types/node: http fetch GET 200 https://registry.n
+[#################.] / reify:@types/node: http fetch GET 200 https://registry.n
+[#################.] / reify:@types/node: http fetch GET 200 https://registry.n
+[#################.] / reify:@types/node: http fetch GET 200 https://registry.n
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[#################.] \ reify:undici: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] / reify:discord.js: http fetch GET 200 https://registry.np
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] \ reify:@esbuild/linux-x64: http fetch GET 200 https://reg
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] / reify:lodash: http fetch GET 200 https://registry.npmjs.
+[##################] \ reify:discord-api-types: http fetch GET 200 https://regi
+[##################] \ reify:discord-api-types: http fetch GET 200 https://regi
+[##################] \ reify:discord-api-types: http fetch GET 200 https://regi
+[##################] \ reify:discord-api-types: http fetch GET 200 https://regi
+[##################] | reify:typescript: http fetch GET 200 https://registry.np
+[##################] / reify:typescript: http fetch GET 200 https://registry.np
+[##################] / reify:typescript: http fetch GET 200 https://registry.np
+[##################] / reify:typescript: http fetch GET 200 https://registry.np
+[##################] / reify:typescript: http fetch GET 200 https://registry.np
+[##################] / reify:typescript: http fetch GET 200 https://registry.np
+[##################] / reify:typescript: http fetch GET 200 https://registry.np
+[##################] / reify:typescript: http fetch GET 200 https://registry.np
+[##################] / reify:typescript: http fetch GET 200 https://registry.np
+[##################] | reify:typescript: http fetch GET 200 https://registry.np
+[##################] / reify:typescript: http fetch GET 200 https://registry.np 25h
+[12:36:07 PM]added 48 packages, and audited 49 packages in 22s
+[12:36:07 PM]10 packages are looking for funding
+[12:36:07 PM]run `npm fund` for details
+[12:36:07 PM]found 0 vulnerabilities
+[12:36:07 PM]node:internal/modules/cjs/loader:1093
+[12:36:07 PM]throw err;
+[12:36:07 PM]^
+[12:36:07 PM]Error: Cannot find module '/home/container/index.js'
+[12:36:07 PM] at Module._resolveFilename (node:internal/modules/cjs/loader:1090:15)
+[12:36:07 PM] at Module._load (node:internal/modules/cjs/loader:934:27)
+[12:36:07 PM] at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:83:12)
+[12:36:07 PM] at node:internal/main/run_main_module:23:47 {
+[12:36:07 PM]code: 'MODULE_NOT_FOUND',
+[12:36:07 PM]requireStack: []
+[12:36:07 PM]}
+[12:36:07 PM]Node.js v19.9.0
+[12:36:07 PM]Server marked as offline
+[12:36:08 PM][Wispbyte]: ---------- Detected server process in a crashed state! ----------
+[12:36:08 PM][Wispbyte]: Exit code: 1
+[12:36:08 PM][Wispbyte]: Out of memory: false
+[12:36:08 PM][Wispbyte]: Checking server disk space usage, this could take a few seconds...
+[12:36:08 PM][Wispbyte]: Updating process configuration files...
+[12:36:08 PM][Wispbyte]: Ensuring file permissions are set correctly, this could take a few seconds...
+[12:36:08 PM]Server marked as starting
+[12:36:08 PM][Wispbyte]: Pulling Docker container image, this could take a few minutes to complete...
+[12:36:16 PM][Wispbyte]: Finished pulling Docker container image
+[12:36:17 PM]v19.9.0
+[12:36:17 PM]Server marked as running
+[12:36:17 PM]:/home/container$ if [[ -d .git ]] && [[ ${AUTO_UPDATE} == "1" ]]; then git pull; fi; if [[ ! -z ${NODE_PACKAGES} ]]; then /usr/local/bin/npm install ${NODE_PACKAGES}; fi; if [[ ! -z ${UNNODE_PACKAGES} ]]; then /usr/local/bin/npm uninstall ${UNNODE_PACKAGES}; fi; if [ -f /home/container/package.json ]; then /usr/local/bin/npm install; fi; /usr/local/bin/node /home/container/${JS_FILE}
+[12:36:20 PM]25l[#########.........] - idealTree: timing idealTree Completed in 289ms
+[#########.........] - idealTree: timing idealTree Completed in 289ms
+[#########.........] \ idealTree: timing idealTree Completed in 289ms
+[##################] - reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/
+[##################] \ reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/
+[##################] | reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/
+[##################] | reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/
+[##################] | reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/
+[##################] | reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/
+[##################] | reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/
+[##################] | reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/
+[##################] | reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/
+[##################] | reify:@esbuild/aix-ppc64: timing reifyNode:node_modules/ 25h
+[12:36:20 PM]up to date, audited 49 packages in 2s
+[12:36:20 PM]10 packages are looking for funding
+[12:36:20 PM]run `npm fund` for details
+[12:36:20 PM]found 0 vulnerabilities
+[12:36:20 PM]node:internal/modules/cjs/loader:1093
+[12:36:20 PM]throw err;
+[12:36:20 PM]^
+[12:36:20 PM]Error: Cannot find module '/home/container/index.js'
+[12:36:20 PM] at Module._resolveFilename (node:internal/modules/cjs/loader:1090:15)
+[12:36:20 PM] at Module._load (node:internal/modules/cjs/loader:934:27)
+[12:36:20 PM] at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:83:12)
+[12:36:20 PM] at node:internal/main/run_main_module:23:47 {
+[12:36:20 PM]code: 'MODULE_NOT_FOUND',
+[12:36:20 PM]requireStack: []
+[12:36:20 PM]}
+[12:36:20 PM]Node.js v19.9.0
+[12:36:20 PM]Server marked as offline
+[12:36:21 PM][Wispbyte]: ---------- Detected server process in a crashed state! ----------
+[12:36:21 PM][Wispbyte]: Exit code: 1
+[12:36:21 PM][Wispbyte]: Out of memory: false
+[12:36:21 PM][Wispbyte]: Aborting automatic restart, last crash occurred less than 60 seconds ago.
